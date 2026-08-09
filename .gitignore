@@ -6,6 +6,7 @@ zephyr_modules/
 
 # Vendor firmware and readbacks are recovery material, not source artifacts.
 neo65cu-wired.bin
+neo65cu-zmk*.bin
 neo65cu-*-backup.bin
 neo65cu-*-readback.bin
 neo65cu-*-readback-*.bin

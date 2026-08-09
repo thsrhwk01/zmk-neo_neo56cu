@@ -86,6 +86,14 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 - `Verify STM32F072 image boundaries`: success
 - generated artifact: `firmware`
 
+다운로드한 `neo65cu-zmk.bin`을 로컬에서도 재검사했습니다.
+
+- size: 38,452 bytes (`0x9634`)
+- SHA-256: `359CA48EE7CC099E82E363FCA47B47B7CE5A9273ED822C0E5B8E94E9647EC991`
+- Initial MSP: `0x20001E18`
+- Reset Handler: `0x080024B5`
+- main flash 및 STM32F072 SRAM 경계 검사: pass
+
 이 run에서는 어떤 USB/DFU 장치에도 접근하지 않았고 실기기 flash write도 하지
 않았습니다. artifact 다운로드 API는 인증이 필요하므로 이 세션에서는 생성
 여부까지만 공개 API로 재확인했습니다.
