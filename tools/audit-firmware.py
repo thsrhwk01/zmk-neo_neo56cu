@@ -487,7 +487,10 @@ def main() -> int:
             "::notice file=tools/audit-firmware.py,"
             "title=Neo65 CU firmware audit passed::"
             f"sha256={binary['sha256']} size={binary['size']} "
-            f"image_end=0x{int(binary['image_end']):08X}"
+            f"image_end=0x{int(binary['image_end']):08X} "
+            f"msp=0x{int(binary['initial_msp']):08X} "
+            f"reset=0x{int(binary['reset_handler']):08X} "
+            f"handlers={binary['nonzero_handlers']}"
         )
     return 0
 
