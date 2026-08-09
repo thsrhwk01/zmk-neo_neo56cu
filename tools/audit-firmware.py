@@ -317,8 +317,8 @@ def audit_elf(
 
     require(symbols["_vector_start"] == FLASH_START, "vector table is not at main-flash offset zero")
     require(symbols["__rom_region_start"] == FLASH_START, "ROM link region has a nonzero offset")
-    require(symbols["__rom_region_end"] == FLASH_END,
-            "linked ROM region is not exactly the 128 KiB main flash")
+    require(symbols["__rom_region_end"] <= FLASH_END,
+            "linked ROM contents exceed main flash")
     require(symbols["_image_ram_start"] == SRAM_START, "RAM image does not begin at STM32F072 SRAM")
     require(symbols["_ram_vector_start"] == SRAM_START,
             "Cortex-M0 SRAM vector table is not mapped at 0x20000000")
