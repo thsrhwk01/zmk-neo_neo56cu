@@ -55,6 +55,11 @@ bootloader를 둔 형태가 아닙니다.
 system memory는 mask ROM 영역이므로 main flash code partition이나 `.bin`에
 포함되지 않습니다. 이 사실이 실기기 검증 생략을 허용하는 것은 아닙니다.
 
+Cortex-M0에는 VTOR가 없으므로 소프트 ROM DFU 진입 시 SYSCFG clock을 켜고
+system flash를 `0x00000000`에 remap한 뒤 ROM Reset Handler로 분기합니다.
+이 과정에서 쓰는 것은 SRAM marker와 volatile peripheral register뿐이며 flash,
+option bytes, system ROM에는 쓰지 않습니다.
+
 ## Link65 포팅에서 적용한 교훈
 
 - DFU의 쓰기 가능 범위와 실제 application vector 주소를 같은 것으로 가정하지
@@ -68,6 +73,23 @@ system memory는 mask ROM 영역이므로 main flash code partition이나 `.bin`
 Neo65 CU에는 Link65 전용 `0x08006000` partition, APM32F103 MSP mask, early-stack
 linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 
+## 자동 빌드 검증
+
+2026-08-09 GitHub Actions 결과:
+
+- repository: `thsrhwk01/zmk-neo_neo56cu` (저장소 이름은 URL 그대로 사용)
+- source commit: `03046650512806228579bc332836a2ec4a37732d`
+- run: [#31291324252](https://github.com/thsrhwk01/zmk-neo_neo56cu/actions/runs/31291324252)
+- `Fetch Build Keyboards`: success
+- `Build (neo65cu)`: success
+- `Merge Output Artifacts`: success
+- `Verify STM32F072 image boundaries`: success
+- generated artifact: `firmware`
+
+이 run에서는 어떤 USB/DFU 장치에도 접근하지 않았고 실기기 flash write도 하지
+않았습니다. artifact 다운로드 API는 인증이 필요하므로 이 세션에서는 생성
+여부까지만 공개 API로 재확인했습니다.
+
 ## 실기기 검증 대기 항목
 
 - [ ] PCB 실크와 MCU marking 사진 기록 (`STM32F072CBT6` 예상)
@@ -76,7 +98,7 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 - [ ] alternate setting과 memory descriptor 원문 기록
 - [ ] main flash 128 KiB readback 및 SHA-256 기록
 - [ ] official BIN 복원 성공 확인
-- [ ] ZMK image의 MSP/Reset Handler/크기 정적 검사
+- [x] ZMK image의 MSP/Reset Handler/크기 정적 검사 (Actions run #31291324252)
 - [ ] ZMK USB enumeration 3회 cold-plug 확인
 - [ ] 70개 matrix 위치 및 optional layout footprints 확인
 - [ ] 단일 키 입력 시 인접 키 동시 입력/잔류 여부 확인
