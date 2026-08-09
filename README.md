@@ -64,8 +64,8 @@ GitHub Actions에서 수동으로 `Build Neo65 CU ZMK firmware` workflow를 실�
 - Reset Handler가 Thumb code이며 main flash 안에 있음
 - system ROM 주소가 애플리케이션 image 범위 밖에 있음
 
-2026-08-09에 source commit `0304665`를 대상으로 실행한
-[GitHub Actions run #31291324252](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/runs/31291324252)에서
+2026-08-09에 cold-plug Esc 복구를 포함한 source commit `a1a503c`를 대상으로
+실행한 [GitHub Actions run #31296130100](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/runs/31296130100)에서
 보드 탐색, `neo65cu` 빌드, artifact 병합, STM32F072 image-boundary 검증이 모두
 성공했습니다. 이는 컴파일 및 정적 검증 결과이며 실기기 플래시/동작 검증을
 의미하지 않습니다.

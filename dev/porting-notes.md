@@ -89,7 +89,7 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 
 ## 자동 빌드 검증
 
-2026-08-09 GitHub Actions 결과:
+2026-08-09 최초 ZMK artifact의 GitHub Actions 결과:
 
 - repository: `thsrhwk01/zmk-neo_neo65cu`
 - source commit: `03046650512806228579bc332836a2ec4a37732d`
@@ -108,9 +108,20 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 - Reset Handler: `0x080024B5`
 - main flash 및 STM32F072 SRAM 경계 검사: pass
 
-이 run에서는 어떤 USB/DFU 장치에도 접근하지 않았고 실기기 flash write도 하지
-않았습니다. artifact 다운로드 API는 인증이 필요하므로 이 세션에서는 생성
-여부까지만 공개 API로 재확인했습니다.
+자석식 pogo-pin 구조에 대응해 cold-plug Esc ROM DFU를 추가한 뒤 다시 실행한
+결과:
+
+- source commit: `a1a503c73252a8697806731a31651414a3c9cb65`
+- run: [#31296130100](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/runs/31296130100)
+- `Fetch Build Keyboards`: success
+- `Build (neo65cu)`: success
+- `Merge Output Artifacts`: success
+- `Verify STM32F072 image boundaries`: success
+- artifact: `firmware` (artifact ID `9033004709`)
+
+GitHub의 artifact download API는 인증을 요구하므로 새 binary의 로컬 SHA-256은
+사용자가 artifact를 내려받은 뒤 별도로 기록합니다. 이 Actions run에서도 어떤
+실기기 flash write도 수행하지 않았습니다.
 
 ## 실기기 DFU 및 원본 readback 확인
 
