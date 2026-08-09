@@ -1,0 +1,118 @@
+/*
+ * Copyright (c) 2026 Neo65 CU ZMK contributors
+ * SPDX-License-Identifier: MIT
+ */
+
+#define DT_DRV_COMPAT zmk_behavior_neo65cu_rom_dfu
+
+#include <stddef.h>
+#include <stdint.h>
+
+#include <zephyr/device.h>
+#include <zephyr/init.h>
+#include <zephyr/sys/reboot.h>
+#include <zephyr/sys/util.h>
+
+#include <cmsis_core.h>
+#include <stm32f0xx.h>
+
+#include <drivers/behavior.h>
+#include <zmk/behavior.h>
+
+#define NEO65CU_DFU_MAGIC 0x4E454F44U
+#define STM32F072_SYSTEM_MEMORY_START 0x1FFFC800U
+#define STM32F072_SYSTEM_MEMORY_END 0x20000000U
+#define STM32F072_SRAM_START 0x20000000U
+#define STM32F072_SRAM_END 0x20004000U
+
+/* Retained across NVIC_SystemReset; never stored in flash or option bytes. */
+static volatile uint32_t neo65cu_dfu_magic
+    __attribute__((section(".noinit.neo65cu_dfu")));
+
+typedef void (*rom_entry_t)(void);
+
+static int neo65cu_maybe_enter_rom_dfu(void) {
+    if (neo65cu_dfu_magic != NEO65CU_DFU_MAGIC) {
+        return 0;
+    }
+
+    neo65cu_dfu_magic = 0;
+    __DSB();
+    __ISB();
+
+    const uint32_t *const vectors =
+        (const uint32_t *)STM32F072_SYSTEM_MEMORY_START;
+    const uint32_t stack_pointer = vectors[0];
+    const uint32_t reset_handler = vectors[1];
+    const uint32_t reset_address = reset_handler & ~1U;
+
+    /* Fail closed if the immutable ROM vector table is not plausible. */
+    if (stack_pointer < STM32F072_SRAM_START ||
+        stack_pointer > STM32F072_SRAM_END ||
+        (stack_pointer & 0x7U) != 0U ||
+        (reset_handler & 1U) == 0U ||
+        reset_address < STM32F072_SYSTEM_MEMORY_START ||
+        reset_address >= STM32F072_SYSTEM_MEMORY_END) {
+        return 0;
+    }
+
+    __disable_irq();
+
+    SysTick->CTRL = 0;
+    SysTick->LOAD = 0;
+    SysTick->VAL = 0;
+    SCB->ICSR = SCB_ICSR_PENDSVCLR_Msk | SCB_ICSR_PENDSTCLR_Msk;
+
+    for (size_t i = 0; i < ARRAY_SIZE(NVIC->ICER); i++) {
+        NVIC->ICER[i] = UINT32_MAX;
+        NVIC->ICPR[i] = UINT32_MAX;
+    }
+
+    /* Cortex-M0 has no VTOR. Map the ROM vectors at 0x00000000 before
+     * enabling interrupts in the factory bootloader. These are volatile
+     * clock/memory-map registers, not flash or option bytes.
+     */
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGCOMPEN;
+    (void)RCC->APB2ENR;
+    SYSCFG->CFGR1 =
+        (SYSCFG->CFGR1 & ~SYSCFG_CFGR1_MEM_MODE) |
+        SYSCFG_CFGR1_MEM_MODE_0;
+
+    __set_CONTROL(0);
+    __set_MSP(stack_pointer);
+    __DSB();
+    __ISB();
+    __enable_irq();
+
+    ((rom_entry_t)reset_handler)();
+    CODE_UNREACHABLE;
+}
+
+SYS_INIT(neo65cu_maybe_enter_rom_dfu, PRE_KERNEL_1, 0);
+
+static int on_pressed(struct zmk_behavior_binding *binding,
+                      struct zmk_behavior_binding_event event) {
+    ARG_UNUSED(binding);
+    ARG_UNUSED(event);
+
+    neo65cu_dfu_magic = NEO65CU_DFU_MAGIC;
+    __DSB();
+    __ISB();
+    sys_reboot(SYS_REBOOT_COLD);
+    return ZMK_BEHAVIOR_OPAQUE;
+}
+
+static const struct behavior_driver_api neo65cu_rom_dfu_driver_api = {
+    .binding_pressed = on_pressed,
+    .locality = BEHAVIOR_LOCALITY_CENTRAL,
+#if IS_ENABLED(CONFIG_ZMK_BEHAVIOR_METADATA)
+    .get_parameter_metadata = zmk_behavior_get_empty_param_metadata,
+#endif
+};
+
+#define NEO65CU_ROM_DFU_INST(n)                                                                  \
+    BEHAVIOR_DT_INST_DEFINE(n, NULL, NULL, NULL, NULL, POST_KERNEL,                              \
+                            CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,                                 \
+                            &neo65cu_rom_dfu_driver_api);
+
+DT_INST_FOREACH_STATUS_OKAY(NEO65CU_ROM_DFU_INST)

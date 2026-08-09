@@ -1,0 +1,8 @@
+# Copyright (c) 2026 Neo65 CU ZMK contributors
+# SPDX-License-Identifier: MIT
+
+description: Enter the immutable STM32F072 system-memory USB DFU bootloader
+
+compatible: "zmk,behavior-neo65cu-rom-dfu"
+
+include: zero_param.yaml

@@ -1,0 +1,78 @@
+name: Build Neo65 CU ZMK firmware
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "boards/**"
+      - "config/**"
+      - "dts/**"
+      - "src/**"
+      - "zephyr/**"
+      - "build.yaml"
+      - ".github/workflows/build.yml"
+  push:
+    branches:
+      - "**"
+    paths:
+      - "boards/**"
+      - "config/**"
+      - "dts/**"
+      - "src/**"
+      - "zephyr/**"
+      - "build.yaml"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@edf5c0814fd3ea202e43aad2d68fd32e882a518c # v0.3.0
+
+  verify:
+    name: Verify STM32F072 image boundaries
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+
+    steps:
+      - name: Download firmware artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: firmware
+          path: artifacts
+
+      - name: Validate vector table and main-flash bounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          from struct import unpack_from
+
+          path = Path("artifacts/neo65cu-zmk.bin")
+          image = path.read_bytes()
+
+          if len(image) < 8 or len(image) > 0x20000:
+              raise SystemExit(f"invalid image size: {len(image)} bytes")
+
+          initial_msp, reset_handler = unpack_from("<II", image)
+          reset_address = reset_handler & ~1
+
+          if not (0x20000000 <= initial_msp <= 0x20004000):
+              raise SystemExit(f"MSP is outside STM32F072 SRAM: 0x{initial_msp:08X}")
+          if initial_msp & 7:
+              raise SystemExit(f"MSP is not 8-byte aligned: 0x{initial_msp:08X}")
+          if reset_handler & 1 == 0:
+              raise SystemExit(f"Reset Handler is not Thumb code: 0x{reset_handler:08X}")
+          if not (0x08000000 <= reset_address < 0x08020000):
+              raise SystemExit(f"Reset Handler is outside STM32 main flash: 0x{reset_handler:08X}")
+
+          print(f"size={len(image)}")
+          print(f"initial_msp=0x{initial_msp:08X}")
+          print(f"reset_handler=0x{reset_handler:08X}")
+          print("system ROM DFU (0x1FFFC800) is outside every image/load range")
+          PY

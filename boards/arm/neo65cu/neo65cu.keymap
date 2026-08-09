@@ -1,0 +1,75 @@
+// Copyright (c) 2026 Neo65 CU ZMK contributors
+// SPDX-License-Identifier: MIT
+
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+
+#define BASE 0
+#define FUNC 1
+
+/ {
+    combos {
+        compatible = "zmk,combos";
+
+        /* Backspace + Left Control + Left Alt: restart the application. */
+        combo_sys_reset {
+            timeout-ms = <100>;
+            key-positions = <14 61 63>;
+            bindings = <&sys_reset>;
+        };
+
+        /*
+         * Four distant corner keys make accidental ROM DFU entry unlikely.
+         * This writes only an SRAM marker, resets, and jumps to STM32 system
+         * ROM. It never erases or writes flash/option bytes.
+         * Esc + Delete + Left Control + Right Arrow
+         */
+        combo_rom_dfu {
+            timeout-ms = <150>;
+            key-positions = <0 15 61 69>;
+            bindings = <&neo_dfu>;
+        };
+    };
+
+    keymap {
+        compatible = "zmk,keymap";
+
+        base {
+            bindings = <
+                &kp ESC   &kp N1    &kp N2    &kp N3    &kp N4    &kp N5    &kp N6    &kp N7
+                &kp N8    &kp N9    &kp N0    &kp MINUS &kp EQUAL &kp BSLH  &kp BSPC  &kp DEL
+
+                &kp TAB   &kp Q     &kp W     &kp E     &kp R     &kp T     &kp Y     &kp U
+                &kp I     &kp O     &kp P     &kp LBKT  &kp RBKT  &kp BSLH  &kp PG_UP
+
+                &kp CLCK  &kp A     &kp S     &kp D     &kp F     &kp G     &kp H     &kp J
+                &kp K     &kp L     &kp SEMI  &kp SQT   &kp NUHS  &kp ENTER &kp PG_DN
+
+                &kp LSHFT &kp NUBS  &kp Z     &kp X     &kp C     &kp V     &kp B     &kp N
+                &kp M     &kp COMMA &kp DOT   &kp FSLH  &kp RSHFT &kp UP    &kp END
+
+                &kp LCTRL &kp LGUI  &kp LALT  &kp SPACE &kp RALT  &mo FUNC
+                &kp LEFT  &kp DOWN  &kp RIGHT
+            >;
+        };
+
+        func {
+            bindings = <
+                &kp GRAVE &kp F1   &kp F2   &kp F3   &kp F4   &kp F5   &kp F6   &kp F7
+                &kp F8    &kp F9   &kp F10  &kp F11  &kp F12  &trans   &trans   &trans
+
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans   &trans
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans
+
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans   &trans
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans
+
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans   &trans
+                &trans    &trans   &trans   &trans   &trans   &trans   &trans
+
+                &trans    &trans   &trans   &trans   &trans   &trans
+                &trans    &trans   &trans
+            >;
+        };
+    };
+};

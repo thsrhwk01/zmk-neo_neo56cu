@@ -1,0 +1,5 @@
+name: zmk-keyboard-neo65cu
+build:
+  settings:
+    board_root: .
+    dts_root: .

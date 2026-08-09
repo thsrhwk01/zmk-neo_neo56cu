@@ -1,0 +1,31 @@
+# SPDX-License-Identifier: MIT
+
+CONFIG_BOARD_NEO65CU=y
+CONFIG_SOC_SERIES_STM32F0X=y
+CONFIG_SOC_STM32F072XB=y
+
+# STM32F072 runs at a maximum of 48 MHz.
+CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC=48000000
+CONFIG_CLOCK_CONTROL=y
+
+CONFIG_PINCTRL=y
+CONFIG_GPIO=y
+
+# This PCB is USB-only. Keep the firmware small enough for 16 KiB SRAM.
+CONFIG_ZMK_USB=y
+CONFIG_USB_SELF_POWERED=n
+CONFIG_ZMK_HID_INDICATORS=y
+CONFIG_HEAP_MEM_POOL_SIZE=1024
+CONFIG_ISR_STACK_SIZE=1024
+
+# PC14/PC15, PA0/PB0, PA1/PB1, and other column pairs share EXTI numbers.
+CONFIG_ZMK_KSCAN_MATRIX_POLLING=y
+
+# Match QMK's generic ChibiOS matrix timing: a short input propagation delay
+# and 30 us after releasing one row before driving the next row.
+CONFIG_ZMK_KSCAN_MATRIX_WAIT_BEFORE_INPUTS=1
+CONFIG_ZMK_KSCAN_MATRIX_WAIT_BETWEEN_OUTPUTS=30
+
+# The application occupies STM32 main flash. The immutable factory USB DFU
+# bootloader is in STM32 system ROM and is not part of this partition.
+CONFIG_USE_DT_CODE_PARTITION=y

@@ -1,0 +1,3 @@
+config BOARD_NEO65CU
+    bool "Neo65 CU Wired"
+    depends on SOC_STM32F072XB

@@ -1,0 +1,9 @@
+file_format: "1"
+id: neo65cu
+name: Neo65 CU Wired
+type: board
+arch: arm
+features:
+  - keys
+outputs:
+  - usb

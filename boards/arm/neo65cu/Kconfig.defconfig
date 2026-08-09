@@ -1,0 +1,17 @@
+if BOARD_NEO65CU
+
+config BOARD
+    default "neo65cu"
+
+config ZMK_KEYBOARD_NAME
+    default "Neo65 Cu"
+
+config ZMK_USB
+    default y
+
+# Several matrix inputs share STM32 EXTI line numbers, so interrupt-driven
+# scanning cannot represent every column independently.
+config ZMK_KSCAN_MATRIX_POLLING
+    default y
+
+endif # BOARD_NEO65CU
