@@ -76,12 +76,25 @@ jobs:
         run: |
           set -u
           status=0
+          cmake_cache="${{ env.build_dir }}/CMakeCache.txt"
+          readelf_tool="$(sed -n 's|^CMAKE_READELF:FILEPATH=||p' "${cmake_cache}")"
+          nm_tool="$(sed -n 's|^CMAKE_NM:FILEPATH=||p' "${cmake_cache}")"
+          objdump_tool="$(sed -n 's|^CMAKE_OBJDUMP:FILEPATH=||p' "${cmake_cache}")"
+          test -x "${readelf_tool}"
+          test -x "${nm_tool}"
+          test -x "${objdump_tool}"
+          echo "READELF_TOOL=${readelf_tool}" >> "${GITHUB_ENV}"
+          echo "NM_TOOL=${nm_tool}" >> "${GITHUB_ENV}"
+          echo "OBJDUMP_TOOL=${objdump_tool}" >> "${GITHUB_ENV}"
           python3 tools/audit-firmware.py \
             --bin "${{ env.build_dir }}/zephyr/zmk.bin" \
             --elf "${{ env.build_dir }}/zephyr/zmk.elf" \
             --map "${{ env.build_dir }}/zephyr/zmk.map" \
             --config "${{ env.build_dir }}/zephyr/.config" \
             --dts "${{ env.build_dir }}/zephyr/zephyr.dts" \
+            --readelf "${readelf_tool}" \
+            --nm "${nm_tool}" \
+            --objdump "${objdump_tool}" \
             > audit-result.txt 2>&1 || status=$?
           cat audit-result.txt
           exit "${status}"
@@ -99,9 +112,9 @@ jobs:
           cp "${{ env.build_dir }}/zephyr/zephyr.dts" audit/
           cp "${{ env.build_dir }}/zephyr/zmk.stat" audit/
           cp audit-result.txt audit/
-          arm-zephyr-eabi-readelf -W -h -S -l audit/zmk.elf > audit/readelf.txt
-          arm-zephyr-eabi-nm -n -S --defined-only audit/zmk.elf > audit/symbols.txt
-          arm-zephyr-eabi-objdump -d audit/zmk.elf > audit/disassembly.txt
+          "${READELF_TOOL}" -W -h -S -l audit/zmk.elf > audit/readelf.txt
+          "${NM_TOOL}" -n -S --defined-only audit/zmk.elf > audit/symbols.txt
+          "${OBJDUMP_TOOL}" -d audit/zmk.elf > audit/disassembly.txt
           sha256sum audit/zmk.bin audit/zmk.elf > audit/SHA256SUMS
 
       - name: Upload auditable build outputs

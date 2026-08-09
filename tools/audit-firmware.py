@@ -167,8 +167,10 @@ def run_tool(tool: str, *arguments: str) -> str:
     return result.stdout
 
 
-def audit_elf(path: Path, binary: dict[str, int | str], tool_prefix: str) -> None:
-    readelf = run_tool(f"{tool_prefix}readelf", "-W", "-h", "-l", str(path))
+def audit_elf(
+    path: Path, binary: dict[str, int | str], tools: dict[str, str]
+) -> None:
+    readelf = run_tool(tools["readelf"], "-W", "-h", "-l", str(path))
     require("Machine:" in readelf and "ARM" in readelf, "ELF is not an ARM executable")
     require(re.search(r"Type:\s+EXEC", readelf) is not None, "ELF is not executable")
 
@@ -200,7 +202,7 @@ def audit_elf(path: Path, binary: dict[str, int | str], tool_prefix: str) -> Non
         "ELF has no file-backed LOAD beginning at 0x08000000",
     )
 
-    nm = run_tool(f"{tool_prefix}nm", "-n", "--defined-only", str(path))
+    nm = run_tool(tools["nm"], "-n", "--defined-only", str(path))
     symbols: dict[str, int] = {}
     for line in nm.splitlines():
         match = re.match(r"^([0-9a-fA-F]+)\s+\w\s+(\S+)$", line)
@@ -232,7 +234,7 @@ def audit_elf(path: Path, binary: dict[str, int | str], tool_prefix: str) -> Non
     )
 
     disassembly = run_tool(
-        f"{tool_prefix}objdump", "-d", "--disassemble=neo65cu_jump_to_rom", str(path)
+        tools["objdump"], "-d", "--disassemble=neo65cu_jump_to_rom", str(path)
     ).lower()
     sequence = (
         r"\bmsr\s+control\s*,",
@@ -304,6 +306,9 @@ def main() -> int:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--dts", type=Path)
     parser.add_argument("--tool-prefix", default="arm-zephyr-eabi-")
+    parser.add_argument("--readelf")
+    parser.add_argument("--nm")
+    parser.add_argument("--objdump")
     args = parser.parse_args()
 
     diagnostics = (args.elf, args.map_file, args.config, args.dts)
@@ -315,9 +320,14 @@ def main() -> int:
         audit_expected_binary(args.binary, args.expected_bin)
 
     if args.elf is not None:
+        tools = {
+            "readelf": args.readelf or f"{args.tool_prefix}readelf",
+            "nm": args.nm or f"{args.tool_prefix}nm",
+            "objdump": args.objdump or f"{args.tool_prefix}objdump",
+        }
         audit_config(args.config)
         audit_devicetree(args.dts)
-        audit_elf(args.elf, binary, args.tool_prefix)
+        audit_elf(args.elf, binary, tools)
         audit_map(args.map_file)
 
     print(f"size={binary['size']}")
