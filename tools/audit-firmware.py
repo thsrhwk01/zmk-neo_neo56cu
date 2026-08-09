@@ -361,7 +361,11 @@ def audit_elf(
     )
 
     reset_disassembly = run_tool(
-        tools["objdump"], "-d", "--disassemble=z_arm_reset", str(path)
+        tools["objdump"],
+        "-d",
+        f"--start-address=0x{symbols['z_arm_reset']:X}",
+        f"--stop-address=0x{symbols['z_arm_reset'] + 0x200:X}",
+        str(path),
     ).lower()
     reset_sequence = (
         r"\bbl\s+\S*\s*<z_arm_platform_init>",
