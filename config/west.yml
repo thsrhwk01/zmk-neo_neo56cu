@@ -5,7 +5,9 @@ manifest:
   projects:
     - name: zmk
       remote: zmkfirmware
-      revision: v0.3.0
+      # Exact commit behind v0.3.0. A commit ID prevents a moved tag from
+      # silently changing Zephyr, STM32 clock code, or the linker layout.
+      revision: edf5c0814fd3ea202e43aad2d68fd32e882a518c
       import: app/west.yml
   self:
     path: config

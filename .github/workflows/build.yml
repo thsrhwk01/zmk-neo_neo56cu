@@ -8,6 +8,7 @@ on:
       - "config/**"
       - "dts/**"
       - "src/**"
+      - "tools/**"
       - "zephyr/**"
       - "build.yaml"
       - ".github/workflows/build.yml"
@@ -19,6 +20,7 @@ on:
       - "config/**"
       - "dts/**"
       - "src/**"
+      - "tools/**"
       - "zephyr/**"
       - "build.yaml"
       - ".github/workflows/build.yml"
@@ -30,49 +32,109 @@ jobs:
   build:
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@edf5c0814fd3ea202e43aad2d68fd32e882a518c # v0.3.0
 
+  audit-build:
+    name: Build auditable ELF and metadata
+    runs-on: ubuntu-latest
+    container:
+      image: zmkfirmware/zmk-build-arm:stable
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Prepare isolated west workspace
+        shell: sh
+        run: |
+          set -eu
+          base_dir="$(mktemp -d)"
+          build_dir="$(mktemp -d)"
+          mkdir -p "${base_dir}/config"
+          cp -R config/. "${base_dir}/config/"
+          echo "base_dir=${base_dir}" >> "${GITHUB_ENV}"
+          echo "build_dir=${build_dir}" >> "${GITHUB_ENV}"
+
+      - name: Initialize pinned ZMK workspace
+        working-directory: ${{ env.base_dir }}
+        shell: sh
+        run: |
+          set -eu
+          west init -l "${{ env.base_dir }}/config"
+          west update --fetch-opt=--filter=tree:0
+          west zephyr-export
+
+      - name: Build Neo65 CU diagnostics image
+        working-directory: ${{ env.base_dir }}
+        shell: sh
+        run: |
+          set -eu
+          west build -s zmk/app -d "${{ env.build_dir }}" -b neo65cu -- \
+            -DZMK_CONFIG="${{ env.base_dir }}/config" \
+            -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}"
+
+      - name: Audit linker, startup, clocks, memory, and ROM handoff
+        shell: sh
+        run: |
+          set -eu
+          python3 tools/audit-firmware.py \
+            --bin "${{ env.build_dir }}/zephyr/zmk.bin" \
+            --elf "${{ env.build_dir }}/zephyr/zmk.elf" \
+            --map "${{ env.build_dir }}/zephyr/zmk.map" \
+            --config "${{ env.build_dir }}/zephyr/.config" \
+            --dts "${{ env.build_dir }}/zephyr/zephyr.dts"
+
+      - name: Collect exact audited build outputs
+        shell: sh
+        run: |
+          set -eu
+          mkdir audit
+          cp "${{ env.build_dir }}/zephyr/zmk.bin" audit/
+          cp "${{ env.build_dir }}/zephyr/zmk.elf" audit/
+          cp "${{ env.build_dir }}/zephyr/zmk.map" audit/
+          cp "${{ env.build_dir }}/zephyr/.config" audit/
+          cp "${{ env.build_dir }}/zephyr/zephyr.dts" audit/
+          cp "${{ env.build_dir }}/zephyr/zmk.stat" audit/
+          arm-zephyr-eabi-readelf -W -h -S -l audit/zmk.elf > audit/readelf.txt
+          arm-zephyr-eabi-nm -n -S --defined-only audit/zmk.elf > audit/symbols.txt
+          arm-zephyr-eabi-objdump -d audit/zmk.elf > audit/disassembly.txt
+          sha256sum audit/zmk.bin audit/zmk.elf > audit/SHA256SUMS
+
+      - name: Upload auditable build outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: audit-neo65cu
+          path: audit
+          retention-days: 14
+
   verify:
-    name: Verify STM32F072 image boundaries
-    needs: build
+    name: Verify exact release BIN
+    needs:
+      - build
+      - audit-build
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
 
     steps:
+      - name: Checkout audit script
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
       - name: Download firmware artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: firmware
-          path: artifacts
+          path: artifacts/firmware
 
-      - name: Validate vector table and main-flash bounds
+      - name: Download exact audited BIN
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: audit-neo65cu
+          path: artifacts/audit
+
+      - name: Compare and validate release image
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          from struct import unpack_from
-
-          path = Path("artifacts/neo65cu-zmk.bin")
-          image = path.read_bytes()
-
-          if len(image) < 8 or len(image) > 0x20000:
-              raise SystemExit(f"invalid image size: {len(image)} bytes")
-
-          initial_msp, reset_handler = unpack_from("<II", image)
-          reset_address = reset_handler & ~1
-
-          if not (0x20000000 <= initial_msp <= 0x20004000):
-              raise SystemExit(f"MSP is outside STM32F072 SRAM: 0x{initial_msp:08X}")
-          if initial_msp & 7:
-              raise SystemExit(f"MSP is not 8-byte aligned: 0x{initial_msp:08X}")
-          if reset_handler & 1 == 0:
-              raise SystemExit(f"Reset Handler is not Thumb code: 0x{reset_handler:08X}")
-          if not (0x08000000 <= reset_address < 0x08020000):
-              raise SystemExit(f"Reset Handler is outside STM32 main flash: 0x{reset_handler:08X}")
-
-          print(f"size={len(image)}")
-          print(f"initial_msp=0x{initial_msp:08X}")
-          print(f"reset_handler=0x{reset_handler:08X}")
-          print("system ROM DFU (0x1FFFC800) is outside every image/load range")
-          PY
+          python3 tools/audit-firmware.py \
+            --bin artifacts/firmware/neo65cu-zmk.bin \
+            --expected-bin artifacts/audit/zmk.bin

@@ -10,6 +10,8 @@
 #include <stdint.h>
 
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/devicetree/gpio.h>
 #include <zephyr/init.h>
 #include <zephyr/sys/util.h>
 
@@ -21,19 +23,38 @@
 
 #define NEO65CU_DFU_MAGIC 0x4E454F44U
 #define STM32F072_SYSTEM_MEMORY_START 0x1FFFC800U
-#define STM32F072_SYSTEM_MEMORY_END 0x20000000U
+#define STM32F072_SYSTEM_MEMORY_END 0x1FFFF800U
 #define STM32F072_SRAM_START 0x20000000U
 #define STM32F072_SRAM_END 0x20004000U
 
-#define NEO65CU_ESC_ROW_PIN 6U
-#define NEO65CU_ESC_COL_PIN 14U
+#define NEO65CU_KSCAN_NODE DT_CHOSEN(zmk_kscan)
+#define NEO65CU_ESC_ROW_PIN \
+    DT_GPIO_PIN_BY_IDX(NEO65CU_KSCAN_NODE, row_gpios, 0)
+#define NEO65CU_ESC_COL_PIN \
+    DT_GPIO_PIN_BY_IDX(NEO65CU_KSCAN_NODE, col_gpios, 0)
 #define NEO65CU_ESC_SETTLE_CYCLES 20000U
 
-/* Retained across NVIC_SystemReset; never stored in flash or option bytes. */
-static volatile uint32_t neo65cu_dfu_magic
-    __attribute__((section(".noinit.neo65cu_dfu")));
+BUILD_ASSERT(DT_SAME_NODE(
+                 DT_GPIO_CTLR_BY_IDX(NEO65CU_KSCAN_NODE, row_gpios, 0),
+                 DT_NODELABEL(gpioa)),
+             "Neo65 CU recovery requires matrix row 0 on GPIOA");
+BUILD_ASSERT(NEO65CU_ESC_ROW_PIN == 6U,
+             "Neo65 CU recovery requires matrix row 0 on PA6");
+BUILD_ASSERT(DT_SAME_NODE(
+                 DT_GPIO_CTLR_BY_IDX(NEO65CU_KSCAN_NODE, col_gpios, 0),
+                 DT_NODELABEL(gpioc)),
+             "Neo65 CU recovery requires matrix column 0 on GPIOC");
+BUILD_ASSERT(NEO65CU_ESC_COL_PIN == 14U,
+             "Neo65 CU recovery requires matrix column 0 on PC14");
 
-typedef void (*rom_entry_t)(void);
+struct neo65cu_dfu_marker {
+    uint32_t magic;
+    uint32_t inverse;
+};
+
+/* Retained across NVIC_SystemReset; never stored in flash or option bytes. */
+static volatile struct neo65cu_dfu_marker neo65cu_dfu_marker
+    __attribute__((section(".noinit.neo65cu_dfu")));
 
 /*
  * Preserve the vendor recovery gesture: row 0 / column 0 is Escape, with
@@ -81,26 +102,55 @@ static bool neo65cu_escape_held_at_boot(void) {
     return held;
 }
 
-static void neo65cu_request_rom_dfu(void) {
-    neo65cu_dfu_magic = NEO65CU_DFU_MAGIC;
+static void __attribute__((noreturn)) neo65cu_request_rom_dfu(void) {
+    neo65cu_dfu_marker.magic = NEO65CU_DFU_MAGIC;
+    neo65cu_dfu_marker.inverse = ~NEO65CU_DFU_MAGIC;
     __DSB();
     __ISB();
     NVIC_SystemReset();
     CODE_UNREACHABLE;
 }
 
+/*
+ * Change MSP and branch in one indivisible compiler barrier.  There must be
+ * no compiler-generated stack access after MSR MSP; the factory Reset Handler
+ * does not return.  The audit workflow verifies this exact instruction tail
+ * in the linked ELF.
+ */
+static void __attribute__((noreturn, noinline))
+neo65cu_jump_to_rom(uint32_t stack_pointer, uint32_t reset_handler) {
+    __asm volatile(
+        "msr control, %[control]\n"
+        "msr msp, %[stack]\n"
+        "dsb\n"
+        "isb\n"
+        "cpsie i\n"
+        "bx %[entry]\n"
+        :
+        : [control] "r" (0U), [stack] "r" (stack_pointer),
+          [entry] "r" (reset_handler)
+        : "memory");
+
+    CODE_UNREACHABLE;
+}
+
 static int neo65cu_maybe_enter_rom_dfu(void) {
-    if (neo65cu_dfu_magic != NEO65CU_DFU_MAGIC) {
+    const bool requested =
+        neo65cu_dfu_marker.magic == NEO65CU_DFU_MAGIC &&
+        neo65cu_dfu_marker.inverse == ~NEO65CU_DFU_MAGIC;
+
+    /* Clear both words before either normal startup or the ROM handoff. */
+    neo65cu_dfu_marker.magic = 0U;
+    neo65cu_dfu_marker.inverse = 0U;
+    __DSB();
+
+    if (!requested) {
         if (neo65cu_escape_held_at_boot()) {
             neo65cu_request_rom_dfu();
         }
 
         return 0;
     }
-
-    neo65cu_dfu_magic = 0;
-    __DSB();
-    __ISB();
 
     const uint32_t *const vectors =
         (const uint32_t *)STM32F072_SYSTEM_MEMORY_START;
@@ -140,14 +190,9 @@ static int neo65cu_maybe_enter_rom_dfu(void) {
         (SYSCFG->CFGR1 & ~SYSCFG_CFGR1_MEM_MODE) |
         SYSCFG_CFGR1_MEM_MODE_0;
 
-    __set_CONTROL(0);
-    __set_MSP(stack_pointer);
     __DSB();
     __ISB();
-    __enable_irq();
-
-    ((rom_entry_t)reset_handler)();
-    CODE_UNREACHABLE;
+    neo65cu_jump_to_rom(stack_pointer, reset_handler);
 }
 
 SYS_INIT(neo65cu_maybe_enter_rom_dfu, PRE_KERNEL_1, 0);
