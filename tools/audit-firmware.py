@@ -122,12 +122,27 @@ def audit_config(path: Path) -> None:
         "CONFIG_SYSTEM_CLOCK_INIT_PRIORITY": "0",
         "CONFIG_CLOCK_CONTROL_INIT_PRIORITY": "1",
         "CONFIG_SRAM_VECTOR_TABLE": "y",
+        "CONFIG_INIT_ARCH_HW_AT_BOOT": "y",
+        "CONFIG_PLATFORM_SPECIFIC_INIT": "y",
+        "CONFIG_MAIN_STACK_SIZE": "1024",
+        "CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE": "1024",
+        "CONFIG_ISR_STACK_SIZE": "1024",
+        "CONFIG_HEAP_MEM_POOL_SIZE": "1024",
         "CONFIG_ZMK_USB": "y",
         "CONFIG_USB_DEVICE_STACK": "y",
         "CONFIG_USB_DC_STM32": "y",
         "CONFIG_USB_DC_STM32_CLOCK_CHECK": "y",
         "CONFIG_USB_SELF_POWERED": "n",
         "CONFIG_ZMK_KSCAN_MATRIX_POLLING": "y",
+        "CONFIG_FLASH": "n",
+        "CONFIG_SETTINGS": "n",
+        "CONFIG_NVS": "n",
+        "CONFIG_FILE_SYSTEM": "n",
+        "CONFIG_STREAM_FLASH": "n",
+        "CONFIG_WATCHDOG": "n",
+        "CONFIG_ZMK_BLE": "n",
+        "CONFIG_BT": "n",
+        "CONFIG_ZMK_STUDIO": "n",
     }
     for key, value in expected.items():
         require(config.get(key) == value, f"unexpected Kconfig value: {key}={config.get(key)!r}")
@@ -151,6 +166,71 @@ def audit_devicetree(path: Path) -> None:
     }
     for description, pattern in patterns.items():
         require(re.search(pattern, text) is not None, f"generated devicetree lost {description}")
+
+    transform_match = re.search(
+        r"default_transform: keymap_transform_0 \{(.*?)\};", text
+    )
+    require(transform_match is not None, "generated devicetree lost the matrix transform")
+    map_match = re.search(r"\bmap = < (.*?) >;", transform_match.group(1))
+    require(map_match is not None, "generated matrix transform has no map")
+    actual_map = tuple(int(value, 0) for value in map_match.group(1).split())
+    expected_map = (
+        *range(0x000, 0x010),
+        *range(0x100, 0x10E), 0x10F,
+        *range(0x200, 0x20E), 0x20F,
+        *range(0x300, 0x30E), 0x40F,
+        0x400, 0x401, 0x402, 0x406, 0x40A, 0x40B, 0x40C, 0x40D, 0x40E,
+    )
+    require(actual_map == expected_map, "generated matrix transform differs from QMK LAYOUT_wired")
+
+    kscan_match = re.search(r"kscan0: kscan \{(.*?)\};", text)
+    require(kscan_match is not None, "generated devicetree lost kscan0")
+    kscan = kscan_match.group(1)
+    require('diode-direction = "row2col";' in kscan,
+            "matrix no longer drives rows and reads columns")
+
+    def parse_gpios(property_name: str) -> tuple[tuple[str, int, int], ...]:
+        match = re.search(rf"\b{re.escape(property_name)} = (.*?);", kscan)
+        require(match is not None, f"kscan0 lost {property_name}")
+        return tuple(
+            (controller, int(pin, 0), int(flags, 0))
+            for controller, pin, flags in re.findall(
+                r"< &(\w+) (0x[0-9a-f]+) (0x[0-9a-f]+) >", match.group(1)
+            )
+        )
+
+    expected_columns = (
+        ("gpioc", 14, 0x11), ("gpioc", 15, 0x11),
+        ("gpioa", 0, 0x11), ("gpioa", 1, 0x11),
+        ("gpioa", 2, 0x11), ("gpioa", 3, 0x11),
+        ("gpioa", 4, 0x11), ("gpiob", 2, 0x11),
+        ("gpiob", 10, 0x11), ("gpiob", 11, 0x11),
+        ("gpiob", 12, 0x11), ("gpiob", 13, 0x11),
+        ("gpiob", 14, 0x11), ("gpiob", 15, 0x11),
+        ("gpioa", 8, 0x11), ("gpioa", 9, 0x11),
+    )
+    expected_rows = (
+        ("gpioa", 6, 0x01), ("gpioa", 7, 0x01),
+        ("gpiob", 0, 0x01), ("gpiob", 1, 0x01),
+        ("gpiob", 9, 0x01),
+    )
+    require(parse_gpios("col-gpios") == expected_columns,
+            "generated matrix column pins/flags differ from QMK")
+    require(parse_gpios("row-gpios") == expected_rows,
+            "generated matrix row pins/flags differ from QMK")
+    require(
+        re.search(r"caps_lock_led: caps_lock_led \{ gpios = < &gpioc 0xd 0x0 >;", text)
+        is not None,
+        "Caps Lock LED is no longer active-high PC13",
+    )
+    require(
+        re.search(
+            r"combo_rom_dfu \{ timeout-ms = < 0x96 >; "
+            r"key-positions = < 0x0 0xf 0x3d 0x45 >; bindings = < &neo_dfu >;",
+            text,
+        ) is not None,
+        "four-corner ROM DFU recovery combo changed",
+    )
 
 
 def run_tool(tool: str, *arguments: str) -> str:
@@ -215,6 +295,14 @@ def audit_elf(
         "__rom_region_end",
         "_image_ram_start",
         "_image_ram_end",
+        "_ram_vector_start",
+        "_ram_vector_end",
+        "relocate_vector_table",
+        "z_main_stack",
+        "z_arm_reset",
+        "z_arm_prep_c",
+        "z_arm_platform_init",
+        "z_arm_init_arch_hw_at_boot",
         "neo65cu_dfu_marker",
         "neo65cu_maybe_enter_rom_dfu",
         "neo65cu_jump_to_rom",
@@ -225,13 +313,45 @@ def audit_elf(
 
     require(symbols["_vector_start"] == FLASH_START, "vector table is not at main-flash offset zero")
     require(symbols["__rom_region_start"] == FLASH_START, "ROM link region has a nonzero offset")
-    require(symbols["__rom_region_end"] <= FLASH_END, "linked ROM region exceeds main flash")
+    require(symbols["__rom_region_end"] == FLASH_END,
+            "linked ROM region is not exactly the 128 KiB main flash")
     require(symbols["_image_ram_start"] == SRAM_START, "RAM image does not begin at STM32F072 SRAM")
-    require(symbols["_image_ram_end"] <= SRAM_END, "linked RAM image exceeds 16 KiB SRAM")
+    require(symbols["_ram_vector_start"] == SRAM_START,
+            "Cortex-M0 SRAM vector table is not mapped at 0x20000000")
+    require(
+        symbols["_ram_vector_end"] - symbols["_ram_vector_start"] == VECTOR_WORDS * 4,
+        "Cortex-M0 SRAM vector table is not exactly 48 words",
+    )
+    require(
+        symbols["z_main_stack"] + 1024 == int(binary["initial_msp"]),
+        "Reset vector MSP is not the top of Zephyr's 1024-byte main stack",
+    )
+    require(symbols["_image_ram_end"] <= SRAM_END - 4096,
+            "linked image leaves less than 4 KiB of SRAM headroom")
     require(
         SRAM_START <= symbols["neo65cu_dfu_marker"] <= SRAM_END - 8,
         "ROM-DFU marker is not in SRAM",
     )
+    require(
+        symbols["_ram_vector_end"] <= symbols["neo65cu_dfu_marker"]
+        and symbols["neo65cu_dfu_marker"] + 8 <= symbols["_image_ram_end"]
+        and symbols["neo65cu_dfu_marker"] % 4 == 0,
+        "ROM-DFU marker overlaps vectors, exceeds the RAM image, or is misaligned",
+    )
+
+    reset_disassembly = run_tool(
+        tools["objdump"], "-d", "--disassemble=z_arm_reset", str(path)
+    ).lower()
+    reset_sequence = (
+        r"\bbl\s+\S*\s*<z_arm_platform_init>",
+        r"\bbl\s+\S*\s*<z_arm_init_arch_hw_at_boot>",
+        r"\bbl\s+\S*\s*<z_arm_prep_c>",
+    )
+    position = 0
+    for pattern in reset_sequence:
+        match = re.search(pattern, reset_disassembly[position:])
+        require(match is not None, f"Reset path lacks ordered call: {pattern}")
+        position += match.end()
 
     disassembly = run_tool(
         tools["objdump"], "-d", "--disassemble=neo65cu_jump_to_rom", str(path)
@@ -337,6 +457,13 @@ def main() -> int:
     print(f"reset_handler=0x{int(binary['reset_handler']):08X}")
     print(f"nonzero_handler_vectors={binary['nonzero_handlers']}")
     print("audit=PASS")
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print(
+            "::notice file=tools/audit-firmware.py,"
+            "title=Neo65 CU firmware audit passed::"
+            f"sha256={binary['sha256']} size={binary['size']} "
+            f"image_end=0x{int(binary['image_end']):08X}"
+        )
     return 0
 
 

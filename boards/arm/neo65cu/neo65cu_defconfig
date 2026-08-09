@@ -18,6 +18,15 @@ CONFIG_ZMK_HID_INDICATORS=y
 CONFIG_HEAP_MEM_POOL_SIZE=1024
 CONFIG_ISR_STACK_SIZE=1024
 
+# Be robust if the STM32 ROM DFU chain-loads the application without a full
+# Cortex-M reset. Restore CONTROL plus NVIC enable/pending state before Zephyr
+# enables its own interrupts.
+CONFIG_INIT_ARCH_HW_AT_BOOT=y
+
+# Run the board's pre-C hook before the Cortex-M0 SRAM vector remap. It enables
+# the SYSCFG clock and clears inherited SysTick/USB state from the ROM DFU.
+CONFIG_PLATFORM_SPECIFIC_INIT=y
+
 # PC14/PC15, PA0/PB0, PA1/PB1, and other column pairs share EXTI numbers.
 CONFIG_ZMK_KSCAN_MATRIX_POLLING=y
 
