@@ -8,5 +8,6 @@ zephyr_modules/
 neo65cu-wired.bin
 neo65cu-*-backup.bin
 neo65cu-*-readback.bin
+neo65cu-*-readback-*.bin
 
 .vscode/

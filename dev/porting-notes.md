@@ -90,13 +90,41 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 않았습니다. artifact 다운로드 API는 인증이 필요하므로 이 세션에서는 생성
 여부까지만 공개 API로 재확인했습니다.
 
+## 실기기 DFU 및 원본 readback 확인
+
+2026-08-09, `dfu-util 0.11`로 확인한 실제 장치:
+
+- DFU VID/PID: `0483:df11`
+- serial: `FFFFFFFEFFFF`
+- 확인 당시 USB path: `2-2.3`
+- alt 0: `@Internal Flash  /0x08000000/064*0002Kg`
+- alt 1: `@Option Bytes  /0x1FFFF800/01*016 e`
+- alt 1은 모든 절차에서 선택 금지
+
+alt 0의 main flash `0x08000000`부터 `0x20000` bytes를 두 번 upload했습니다.
+두 파일은 모두 131,072 bytes이고 SHA-256이 아래 값으로 일치했습니다.
+
+`EB3710B65CA65CD43B4EB58027EAB8E7CB843F8DB1DEFDC036ED738CF9093F8C`
+
+readback vector는 Initial MSP `0x20000400`, Reset Handler `0x08000191`로
+유효합니다. 첫 upload 전에 남아 있던 `dfuERROR/status(10)`은 dfu-util이
+clear한 뒤 `dfuIDLE/status(0)`가 되었고, 이후 두 번 모두 131,072 bytes upload가
+완료됐습니다. 이 과정에서 download/erase/option-byte 명령은 실행하지
+않았습니다.
+
+현재 설치 이미지는 제공된 공식 `neo65cu-wired.bin`과 동일하지 않습니다.
+readback에 `vial:f64c2b3c` 식별 문자열이 있고, main code가 flash page 0-17에,
+2 bytes의 설정 데이터가 page 60 (`0x0801E000`)에 있습니다. 따라서 이 두
+readback은 현재 설치된 Vial 포트를 되돌릴 때 사용하는 원본 복구 자료입니다.
+제공된 공식 BIN은 별도의 VIA 복구 자료로 유지합니다.
+
 ## 실기기 검증 대기 항목
 
 - [ ] PCB 실크와 MCU marking 사진 기록 (`STM32F072CBT6` 예상)
 - [ ] SW1/hold-Esc로 DFU 진입 확인
-- [ ] DFU VID/PID `0483:df11` 확인
-- [ ] alternate setting과 memory descriptor 원문 기록
-- [ ] main flash 128 KiB readback 및 SHA-256 기록
+- [x] DFU VID/PID `0483:df11` 확인
+- [x] alternate setting과 memory descriptor 원문 기록
+- [x] main flash 128 KiB readback 및 SHA-256 기록
 - [ ] official BIN 복원 성공 확인
 - [x] ZMK image의 MSP/Reset Handler/크기 정적 검사 (Actions run #31291324252)
 - [ ] ZMK USB enumeration 3회 cold-plug 확인
