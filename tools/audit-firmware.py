@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
@@ -261,8 +262,11 @@ def audit_elf(path: Path, binary: dict[str, int | str], tool_prefix: str) -> Non
 def audit_map(path: Path) -> None:
     text = path.read_text(encoding="utf-8", errors="replace")
     require(
-        re.search(r"FLASH \(rx\)\s*:\s*ORIGIN = \(0x8000000 \+ 0x0\), LENGTH = 0x20000", text)
-        is not None,
+        re.search(
+            r"^FLASH\s+0x0*8000000\s+0x0*20000\s+xr\s*$",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        ) is not None,
         "linker map does not use exactly 128 KiB at 0x08000000",
     )
     require(
@@ -331,4 +335,16 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except (AuditError, OSError) as error:
         print(f"AUDIT FAILED: {error}", file=sys.stderr)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            annotation = (
+                str(error)
+                .replace("%", "%25")
+                .replace("\r", "%0D")
+                .replace("\n", "%0A")
+            )
+            print(
+                "::error file=tools/audit-firmware.py,"
+                f"title=Neo65 CU firmware audit::{annotation}",
+                file=sys.stderr,
+            )
         raise SystemExit(1)

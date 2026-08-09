@@ -74,31 +74,38 @@ jobs:
       - name: Audit linker, startup, clocks, memory, and ROM handoff
         shell: sh
         run: |
-          set -eu
+          set -u
+          status=0
           python3 tools/audit-firmware.py \
             --bin "${{ env.build_dir }}/zephyr/zmk.bin" \
             --elf "${{ env.build_dir }}/zephyr/zmk.elf" \
             --map "${{ env.build_dir }}/zephyr/zmk.map" \
             --config "${{ env.build_dir }}/zephyr/.config" \
-            --dts "${{ env.build_dir }}/zephyr/zephyr.dts"
+            --dts "${{ env.build_dir }}/zephyr/zephyr.dts" \
+            > audit-result.txt 2>&1 || status=$?
+          cat audit-result.txt
+          exit "${status}"
 
       - name: Collect exact audited build outputs
+        if: always()
         shell: sh
         run: |
           set -eu
-          mkdir audit
+          mkdir -p audit
           cp "${{ env.build_dir }}/zephyr/zmk.bin" audit/
           cp "${{ env.build_dir }}/zephyr/zmk.elf" audit/
           cp "${{ env.build_dir }}/zephyr/zmk.map" audit/
           cp "${{ env.build_dir }}/zephyr/.config" audit/
           cp "${{ env.build_dir }}/zephyr/zephyr.dts" audit/
           cp "${{ env.build_dir }}/zephyr/zmk.stat" audit/
+          cp audit-result.txt audit/
           arm-zephyr-eabi-readelf -W -h -S -l audit/zmk.elf > audit/readelf.txt
           arm-zephyr-eabi-nm -n -S --defined-only audit/zmk.elf > audit/symbols.txt
           arm-zephyr-eabi-objdump -d audit/zmk.elf > audit/disassembly.txt
           sha256sum audit/zmk.bin audit/zmk.elf > audit/SHA256SUMS
 
       - name: Upload auditable build outputs
+        if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: audit-neo65cu
