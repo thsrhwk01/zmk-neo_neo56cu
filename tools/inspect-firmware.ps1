@@ -33,7 +33,8 @@ $ResetValid = ($ResetHandler -band 1) -eq 1 -and
     $ResetAddress -lt $ImageEnd
 $SizeValid = $Image.Length -le $FlashSize
 
-$RequiredCoreVectors = @(1, 2, 3, 11, 14, 15)
+# Reset/NMI/HardFault/SVC/PendSV/SysTick and STM32F072 USB IRQ 31.
+$RequiredVectors = @(1, 2, 3, 11, 14, 15, 47)
 $InvalidVectors = [Collections.Generic.List[string]]::new()
 $NonZeroHandlerVectors = 0
 $ZeroHandlerVectors = 0
@@ -43,7 +44,7 @@ for ($Index = 1; $Index -lt $VectorWordCount; $Index++) {
 
     if ($Vector -eq 0) {
         $ZeroHandlerVectors++
-        if ($Index -in $RequiredCoreVectors) {
+        if ($Index -in $RequiredVectors) {
             $InvalidVectors.Add("vector[$Index] is unexpectedly zero")
         }
         continue

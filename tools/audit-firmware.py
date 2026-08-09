@@ -22,7 +22,8 @@ SYSTEM_MEMORY_START = 0x1FFFC800
 OPTION_BYTES_START = 0x1FFFF800
 VECTOR_WORDS = 48
 DFU_MAGIC = 0x4E454F44
-REQUIRED_CORE_VECTORS = (1, 2, 3, 11, 14, 15)
+# Reset/NMI/HardFault/SVC/PendSV/SysTick plus STM32F072 USB IRQ 31.
+REQUIRED_VECTORS = (1, 2, 3, 11, 14, 15, 16 + 31)
 
 
 class AuditError(RuntimeError):
@@ -56,7 +57,7 @@ def audit_binary(path: Path) -> dict[str, int | str]:
     )
 
     vectors = struct.unpack_from(f"<{VECTOR_WORDS}I", image)
-    for index in REQUIRED_CORE_VECTORS:
+    for index in REQUIRED_VECTORS:
         require(vectors[index] != 0, f"required core vector {index} is zero")
 
     nonzero_handlers = 0
@@ -158,6 +159,9 @@ def audit_devicetree(path: Path) -> None:
         "16 KiB SRAM": r"memory@20000000 \{.*?reg = < 0x20000000 0x4000 >",
         "main-flash code partition": r"code_partition: partition@0 \{.*?reg = < 0x0 0x20000 >",
         "HSI clock": r"clk_hsi: clk-hsi \{.*?clock-frequency = < 0x7a1200 >; status = \"okay\"",
+        "disabled HSE": r"clk_hse: clk-hse \{.*?status = \"disabled\"",
+        "disabled HSI48": r"clk_hsi48: clk-hsi48 \{.*?status = \"disabled\"",
+        "disabled LSE on PC14/PC15": r"clk_lse: clk-lse \{.*?status = \"disabled\"",
         "HSI x6 PLL": r"pll: pll \{.*?status = \"okay\"; prediv = < 0x1 >; mul = < 0x6 >; clocks = < &clk_hsi >",
         "48 MHz system clock": r"rcc: rcc@40021000 \{.*?clocks = < &pll >; clock-frequency = < 0x2dc6c00 >",
         "USB PLL clock selection": r"usb: zephyr_udc0: usb@40005c00 \{.*?clocks = < &rcc 0x1c 0x800000 >, < &rcc 0x8 0x12730 >; status = \"okay\"",
