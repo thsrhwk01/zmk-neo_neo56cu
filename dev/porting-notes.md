@@ -77,9 +77,9 @@ linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 
 2026-08-09 GitHub Actions 결과:
 
-- repository: `thsrhwk01/zmk-neo_neo56cu` (저장소 이름은 URL 그대로 사용)
+- repository: `thsrhwk01/zmk-neo_neo65cu`
 - source commit: `03046650512806228579bc332836a2ec4a37732d`
-- run: [#31291324252](https://github.com/thsrhwk01/zmk-neo_neo56cu/actions/runs/31291324252)
+- run: [#31291324252](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/runs/31291324252)
 - `Fetch Build Keyboards`: success
 - `Build (neo65cu)`: success
 - `Merge Output Artifacts`: success
