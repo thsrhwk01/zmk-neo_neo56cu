@@ -276,8 +276,8 @@ def audit_elf(
         if file_size:
             require(
                 FLASH_START <= physical_address < FLASH_END
-                and physical_address + file_size <= FLASH_END,
-                f"file-backed ELF LOAD is outside main flash: {line.strip()}",
+                and physical_address + file_size <= int(binary["image_end"]),
+                f"file-backed ELF LOAD is outside the exact BIN payload: {line.strip()}",
             )
 
     require(load_segments, "ELF has no LOAD segments")
@@ -292,6 +292,21 @@ def audit_elf(
         match = re.match(r"^([0-9a-fA-F]+)\s+\w\s+(\S+)$", line)
         if match:
             symbols[match.group(2)] = int(match.group(1), 16)
+
+    forbidden_symbol_fragments = (
+        "flash_write",
+        "flash_erase",
+        "flash_area_write",
+        "flash_area_erase",
+        "settings_save",
+        "nvs_write",
+        "stream_flash",
+    )
+    for symbol in symbols:
+        require(
+            not any(fragment in symbol.lower() for fragment in forbidden_symbol_fragments),
+            f"forbidden persistent-write symbol is linked: {symbol}",
+        )
 
     for symbol in (
         "_vector_start",
@@ -319,6 +334,8 @@ def audit_elf(
     require(symbols["__rom_region_start"] == FLASH_START, "ROM link region has a nonzero offset")
     require(symbols["__rom_region_end"] <= FLASH_END,
             "linked ROM contents exceed main flash")
+    require(symbols["__rom_region_end"] <= int(binary["image_end"]),
+            "linked ROM contents extend past the exact BIN payload")
     require(symbols["_image_ram_start"] == SRAM_START, "RAM image does not begin at STM32F072 SRAM")
     require(symbols["_ram_vector_start"] == SRAM_START,
             "Cortex-M0 SRAM vector table is not mapped at 0x20000000")
