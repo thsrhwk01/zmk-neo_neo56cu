@@ -5,9 +5,9 @@ Qwertykeys/NEO Studio **Neo65 CU 유선 PCB**의 STM32F072용 USB 전용 ZMK
 등 다른 PCB에는 사용할 수 없습니다.
 
 > [!WARNING]
-> 현재 상태는 소스 및 빌드 검증 단계이며 실기기 검증 전입니다. DFU descriptor,
-> 전체 main-flash readback, 물리 복구 경로를 먼저 확인하기 전에는 플래시하지
-> 마십시오.
+> 현재 상태는 소스 및 빌드 검증 단계이며 ZMK 실기기 검증 전입니다. DFU
+> descriptor와 전체 main-flash readback은 확인했지만, ZMK의 cold-plug Esc 복구
+> 경로를 포함한 단계별 검증 전에는 플래시하지 마십시오.
 
 ## 부트로더 보존 원칙
 
@@ -44,10 +44,14 @@ Qwertykeys/NEO Studio **Neo65 CU 유선 PCB**의 STM32F072용 USB 전용 ZMK
 - 스캔: 행 active-low 출력, 열 active-low pull-up 입력, polling
 - 디바운스: press/release 각각 5 ms
 - Caps Lock LED: PC13, active-high
+- 초기 ROM DFU 복구: Esc를 누른 채 USB 연결
 - 소프트 ROM DFU: `Esc + Delete + Left Ctrl + Right Arrow`
 
-소프트 ROM DFU 동작은 SRAM에 marker를 쓴 뒤 reset하고 system ROM으로
-점프할 뿐, flash와 option bytes에는 아무것도 쓰지 않습니다.
+두 경로 모두 SRAM에 marker를 쓴 뒤 reset하고 system ROM으로 점프할 뿐,
+flash와 option bytes에는 아무것도 쓰지 않습니다. Esc 확인은 Zephyr GPIO 및
+ZMK 초기화 전의 `PRE_KERNEL_1` 단계에서 PA6(row 0)을 low로 구동하고
+PC14(column 0)를 pull-up 입력으로 읽습니다. 따라서 정상 ZMK 키 스캔이나 USB
+enumeration에 의존하지 않습니다.
 
 ## 빌드
 
@@ -86,8 +90,10 @@ PowerShell에서는 원본 또는 빌드 이미지를 정적으로 검사할 수
 다음은 명령 예시가 아니라 **확인 순서**입니다. 하나라도 다르면 중단해야
 합니다.
 
-1. 원본 펌웨어 상태에서 Esc를 누른 채 USB를 연결하거나 PCB의 SW1을 사용해
-   DFU에 진입합니다.
+1. 원본 펌웨어 상태에서 Esc를 누른 채 USB를 연결해 DFU에 진입합니다. Neo65
+   CU는 main PCB와 케이스 고정 daughterboard가 자석식 pogo pin으로 연결되어
+   조립·접속 상태에서 PCB 뒷면 SW1 접근이 어려우므로, SW1을 필수 복구 경로로
+   간주하지 않습니다.
 2. `dfu-util -l`에서 대상이 정확히 `0483:df11`, alternate setting 0,
    STM32 internal flash인지 확인합니다.
 3. upload가 허용되면 main flash `0x08000000`부터 `0x20000` bytes를 읽어
@@ -107,6 +113,7 @@ mass erase와 option-byte 변경은 사용하지 않습니다.
 왼쪽 키이며, 1번 레이어에서 숫자열이 Grave/F1-F12가 됩니다.
 
 - `Backspace + Left Ctrl + Left Alt`: ZMK 소프트 reset
+- Esc를 누른 채 USB 연결: ZMK 초기 부팅 단계에서 STM32 system-ROM USB DFU
 - `Esc + Delete + Left Ctrl + Right Arrow`: STM32 system-ROM USB DFU
 
 QMK가 노출한 split Backspace, ISO Enter, split Left Shift, 6.25u/7u bottom-row
@@ -115,8 +122,8 @@ matrix 위치를 모두 transform에 포함했습니다. 조립된 스위치 위
 
 ## 현재 제한
 
-- 실기기 USB, 전체 70개 matrix 위치, Caps Lock LED, ROM DFU 진입은 아직
-  검증이 필요합니다.
+- 실기기 USB, 전체 70개 matrix 위치, Caps Lock LED, ZMK cold-plug Esc 및
+  four-corner ROM DFU 진입은 아직 검증이 필요합니다.
 - VIA/Vial 및 ZMK Studio는 지원하지 않습니다.
 - 설정 저장용 flash partition은 만들지 않았습니다.
 - Bluetooth/2.4 GHz가 없는 유선 PCB만 대상으로 합니다.

@@ -60,6 +60,20 @@ system flash를 `0x00000000`에 remap한 뒤 ROM Reset Handler로 분기합니�
 이 과정에서 쓰는 것은 SRAM marker와 volatile peripheral register뿐이며 flash,
 option bytes, system ROM에는 쓰지 않습니다.
 
+Neo65 CU의 main PCB는 케이스에 고정된 daughterboard와 자석식 pogo pin으로
+접속합니다. 따라서 접속 상태에서 PCB 뒷면의 SW1을 누르기 어렵고, SW1을 유일한
+복구 수단으로 가정할 수 없습니다. 공식 Neo65/60 Cu 빌드 가이드의 Wired PCB
+firmware 절차도 Esc 스위치를 장착하고 Esc를 누른 채 USB를 다시 연결해 DFU에
+진입하도록 안내합니다:
+https://qwertykeys.notion.site/Neo65-60-Cu-Build-Guide-1863d090094280babee7ce4ff3901aa8
+
+ZMK 포트는 이 동작을 보존합니다. `PRE_KERNEL_1`에서 다른 GPIO/USB/ZMK 장치가
+초기화되기 전에 Esc의 실제 matrix 교차점인 PA6(row 0)/PC14(column 0)만
+일시적으로 스캔합니다. Esc가 눌렸으면 SRAM marker를 기록해 reset한 뒤 immutable
+system-ROM DFU로 분기합니다. Esc가 아니면 변경한 GPIO/RCC register를 모두 원래
+값으로 복원합니다. 이 경로 역시 main flash, option bytes, system ROM을 쓰지
+않습니다.
+
 ## Link65 포팅에서 적용한 교훈
 
 - DFU의 쓰기 가능 범위와 실제 application vector 주소를 같은 것으로 가정하지
@@ -129,7 +143,9 @@ readback은 현재 설치된 Vial 포트를 되돌릴 때 사용하는 원본 �
 ## 실기기 검증 대기 항목
 
 - [ ] PCB 실크와 MCU marking 사진 기록 (`STM32F072CBT6` 예상)
-- [ ] SW1/hold-Esc로 DFU 진입 확인
+- [x] 현재 Vial에서 hold-Esc로 DFU 진입 확인
+- [ ] ZMK 초기 부팅 hold-Esc로 DFU 재진입 확인
+- [ ] PCB 뒷면 SW1 위치와 pogo-pin 접속 중 접근 가능 여부 기록
 - [x] DFU VID/PID `0483:df11` 확인
 - [x] alternate setting과 memory descriptor 원문 기록
 - [x] main flash 128 KiB readback 및 SHA-256 기록
@@ -141,7 +157,7 @@ readback은 현재 설치된 Vial 포트를 되돌릴 때 사용하는 원본 �
 - [ ] Caps Lock LED active-high 확인
 - [ ] four-corner combo로 ROM DFU 진입 확인
 - [ ] ROM DFU에서 official BIN 복원 확인
-- [ ] 각 단계 뒤 physical DFU 진입 재확인
+- [ ] 각 단계 뒤 cold-plug Esc DFU 진입 재확인
 
 실기기 결과는 날짜, source commit, firmware SHA-256, 사용한 정확한 명령과 함께
 이 문서에 추가합니다.

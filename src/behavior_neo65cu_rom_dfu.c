@@ -5,12 +5,12 @@
 
 #define DT_DRV_COMPAT zmk_behavior_neo65cu_rom_dfu
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 #include <zephyr/device.h>
 #include <zephyr/init.h>
-#include <zephyr/sys/reboot.h>
 #include <zephyr/sys/util.h>
 
 #include <cmsis_core.h>
@@ -25,14 +25,76 @@
 #define STM32F072_SRAM_START 0x20000000U
 #define STM32F072_SRAM_END 0x20004000U
 
+#define NEO65CU_ESC_ROW_PIN 6U
+#define NEO65CU_ESC_COL_PIN 14U
+#define NEO65CU_ESC_SETTLE_CYCLES 20000U
+
 /* Retained across NVIC_SystemReset; never stored in flash or option bytes. */
 static volatile uint32_t neo65cu_dfu_magic
     __attribute__((section(".noinit.neo65cu_dfu")));
 
 typedef void (*rom_entry_t)(void);
 
+/*
+ * Preserve the vendor recovery gesture: row 0 / column 0 is Escape, with
+ * rows driven low and columns read through pull-ups.  This runs before the
+ * Zephyr GPIO and ZMK stacks, so it still works if USB or key scanning later
+ * fails to initialize.  Only volatile GPIO/RCC registers are touched and all
+ * of them are restored when Escape is not held.
+ */
+static bool neo65cu_escape_held_at_boot(void) {
+    const uint32_t saved_ahbenr = RCC->AHBENR;
+
+    RCC->AHBENR = saved_ahbenr | RCC_AHBENR_GPIOAEN | RCC_AHBENR_GPIOCEN;
+    (void)RCC->AHBENR;
+
+    const uint32_t saved_gpioa_moder = GPIOA->MODER;
+    const uint32_t saved_gpioa_otyper = GPIOA->OTYPER;
+    const uint32_t saved_gpioa_odr = GPIOA->ODR;
+    const uint32_t saved_gpioc_moder = GPIOC->MODER;
+    const uint32_t saved_gpioc_pupdr = GPIOC->PUPDR;
+
+    /* Drive row PA6 low before changing it to an output. */
+    GPIOA->BRR = BIT(NEO65CU_ESC_ROW_PIN);
+    GPIOA->OTYPER &= ~BIT(NEO65CU_ESC_ROW_PIN);
+    GPIOA->MODER =
+        (GPIOA->MODER & ~GPIO_MODER_MODER6) | GPIO_MODER_MODER6_0;
+
+    /* Read column PC14 as an input with its internal pull-up enabled. */
+    GPIOC->MODER &= ~GPIO_MODER_MODER14;
+    GPIOC->PUPDR =
+        (GPIOC->PUPDR & ~GPIO_PUPDR_PUPDR14) | GPIO_PUPDR_PUPDR14_0;
+
+    for (volatile uint32_t i = 0; i < NEO65CU_ESC_SETTLE_CYCLES; i++) {
+        __NOP();
+    }
+
+    const bool held = (GPIOC->IDR & BIT(NEO65CU_ESC_COL_PIN)) == 0U;
+
+    GPIOA->MODER = saved_gpioa_moder;
+    GPIOA->OTYPER = saved_gpioa_otyper;
+    GPIOA->ODR = saved_gpioa_odr;
+    GPIOC->MODER = saved_gpioc_moder;
+    GPIOC->PUPDR = saved_gpioc_pupdr;
+    RCC->AHBENR = saved_ahbenr;
+
+    return held;
+}
+
+static void neo65cu_request_rom_dfu(void) {
+    neo65cu_dfu_magic = NEO65CU_DFU_MAGIC;
+    __DSB();
+    __ISB();
+    NVIC_SystemReset();
+    CODE_UNREACHABLE;
+}
+
 static int neo65cu_maybe_enter_rom_dfu(void) {
     if (neo65cu_dfu_magic != NEO65CU_DFU_MAGIC) {
+        if (neo65cu_escape_held_at_boot()) {
+            neo65cu_request_rom_dfu();
+        }
+
         return 0;
     }
 
@@ -95,10 +157,7 @@ static int on_pressed(struct zmk_behavior_binding *binding,
     ARG_UNUSED(binding);
     ARG_UNUSED(event);
 
-    neo65cu_dfu_magic = NEO65CU_DFU_MAGIC;
-    __DSB();
-    __ISB();
-    sys_reboot(SYS_REBOOT_COLD);
+    neo65cu_request_rom_dfu();
     return ZMK_BEHAVIOR_OPAQUE;
 }
 
