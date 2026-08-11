@@ -196,7 +196,12 @@ west build -s zmk/app -b neo65cu -- \
 - VIA, Vial 및 ZMK Studio는 지원하지 않습니다.
 - 유선 PCB만 지원합니다.
 
-상세한 포팅 근거, 감사 설계 및 실기기 checklist는 [`dev/porting-notes.md`](dev/porting-notes.md)에 있습니다. 복구용 BIN과 readback은 의도적으로 Git에서 제외하며, 외부 백업에 보관할 정확한 파일명과 해시는 [`dev/recovery-files.sha256`](dev/recovery-files.sha256)에 기록합니다.
+전체 bring-up, ROM handoff, audit와 실기기 검증 과정은
+[한국어 포팅 가이드](docs/porting-guide_ko.md)와
+[영문 포팅 가이드](docs/porting-guide.md)에 정리했습니다. 시간순 근거 기록은
+[`dev/porting-notes.md`](dev/porting-notes.md)에 있습니다. 복구용 BIN과
+readback은 의도적으로 Git에서 제외하며, 외부 백업에 보관할 정확한 파일명과
+hash는 [`dev/recovery-files.sha256`](dev/recovery-files.sha256)에 기록합니다.
 
 ## 라이선스
 

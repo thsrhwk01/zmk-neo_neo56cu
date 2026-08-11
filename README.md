@@ -196,7 +196,13 @@ west build -s zmk/app -b neo65cu -- \
 - VIA, Vial, and ZMK Studio are not available.
 - This port supports only the wired PCB.
 
-Detailed porting evidence, audit design, and the hardware checklist are in [`dev/porting-notes.md`](dev/porting-notes.md). Recovery binaries and readbacks are intentionally excluded from Git; their exact external-backup filenames and hashes are recorded in [`dev/recovery-files.sha256`](dev/recovery-files.sha256).
+The step-by-step [English porting guide](docs/porting-guide.md) and
+[Korean porting guide](docs/porting-guide_ko.md) explain the complete bring-up,
+ROM handoff, audit, and hardware-validation process. The chronological evidence
+log is in [`dev/porting-notes.md`](dev/porting-notes.md). Recovery binaries and
+readbacks are intentionally excluded from Git; their exact external-backup
+filenames and hashes are recorded in
+[`dev/recovery-files.sha256`](dev/recovery-files.sha256).
 
 ## License
 
