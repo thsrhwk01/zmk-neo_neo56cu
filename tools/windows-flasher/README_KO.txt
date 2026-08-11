@@ -64,6 +64,13 @@ Windows에서는 0483:df11 DFU 인터페이스에 WinUSB 드라이버를 최초 
 
 0483:df11이 아닌 장치나 관계없는 STM32 장치의 드라이버는 변경하지 마십시오.
 
+dfu-util은 PC에 연결된 다른 DFU 장치를 열지 못했을 때도
+"Cannot open DFU device <다른 VID:PID>"를 stderr에 출력할 수 있습니다. 최신
+플래셔는 이 메시지를 Neo65 CU 오류로 취급하지 않고 0483:df11만 판별합니다.
+반대로 "Cannot open DFU device 0483:df11"이면 실제 대상 driver 문제이므로 위의
+WinUSB 절차를 진행해야 합니다. 이전 패키지가 다른 VID:PID 메시지에서 즉시
+중단된다면 저장소의 최신 Actions artifact 또는 Release를 다시 받으십시오.
+
 자동 백업
 ---------
 기록 전에 다음 두 파일이 ZIP을 푼 폴더의 backups 하위에 생성됩니다.

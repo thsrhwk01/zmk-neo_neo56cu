@@ -140,8 +140,54 @@ function Read-Checksums {
     return $Checksums
 }
 
+function Invoke-DfuUtilList {
+    # Windows PowerShell converts native stderr redirected with 2>&1 into an
+    # ErrorRecord. With the script-wide ErrorActionPreference=Stop, a warning
+    # about an unrelated inaccessible DFU device can therefore terminate the
+    # flasher before the 0483:df11 lines are parsed. Capture both native streams
+    # directly so only target-specific diagnostics are treated as fatal below.
+    $StartInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $StartInfo.FileName = $script:DfuUtilPath
+    $StartInfo.Arguments = "-l"
+    $StartInfo.UseShellExecute = $false
+    $StartInfo.CreateNoWindow = $true
+    $StartInfo.RedirectStandardOutput = $true
+    $StartInfo.RedirectStandardError = $true
+
+    $Process = [System.Diagnostics.Process]::new()
+    $Process.StartInfo = $StartInfo
+    try {
+        if (-not $Process.Start()) {
+            Stop-Flasher "dfu-util could not be started. Download and extract the ZIP again."
+        }
+
+        $StandardOutputTask = $Process.StandardOutput.ReadToEndAsync()
+        $StandardErrorTask = $Process.StandardError.ReadToEndAsync()
+        $Process.WaitForExit()
+        $StandardOutput = $StandardOutputTask.Result
+        $StandardError = $StandardErrorTask.Result
+        $ExitCode = $Process.ExitCode
+    }
+    finally {
+        $Process.Dispose()
+    }
+
+    $Lines = @(
+        @($StandardOutput, $StandardError) |
+            ForEach-Object { $_ -split "`r?`n" } |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { -not [string]::IsNullOrWhiteSpace($_) }
+    )
+
+    [pscustomobject]@{
+        ExitCode = $ExitCode
+        Lines = [string[]]$Lines
+    }
+}
+
 function Get-Neo65CuDfuDevice {
-    $ListingLines = @(& $script:DfuUtilPath -l 2>&1 | ForEach-Object { $_.ToString().Trim() })
+    $Listing = Invoke-DfuUtilList
+    $ListingLines = @($Listing.Lines)
 
     if ($ListingLines -match '(?i)Cannot open DFU device 0483:df11') {
         Stop-Flasher "Windows cannot open STM32 ROM DFU 0483:df11. Follow the WinUSB driver steps in README_KO.txt."
