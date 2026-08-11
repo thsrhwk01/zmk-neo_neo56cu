@@ -1,0 +1,79 @@
+draw_config:
+  n_columns: 1
+  draw_key_sides: true
+  key_w: 60.0
+  key_h: 56.0
+  combo_w: 36.0
+  combo_h: 28.0
+  key_rx: 6.0
+  key_ry: 6.0
+  inner_pad_w: 2.0
+  inner_pad_h: 2.0
+  outer_pad_w: 30.0
+  outer_pad_h: 42.0
+  line_spacing: 1.2
+  append_colon_to_layer_header: true
+  svg_extra_style: |
+    svg.keymap {
+      font-family: Ubuntu Mono, Inconsolata, Consolas, Liberation Mono, Menlo, monospace;
+      font-size: 12px;
+      font-weight: bold;
+      text-rendering: optimizeLegibility;
+    }
+
+    rect.held, rect.combo.held {
+      fill: #ffc;
+    }
+
+parse_config:
+  mark_alternate_layer_activators: true
+  raw_binding_map:
+    "&sys_reset": RESTART
+    "&neo_dfu": ROM DFU
+
+  zmk_keycode_map:
+    N1: {tap: "1", shifted: "!"}
+    N2: {tap: "2", shifted: "@"}
+    N3: {tap: "3", shifted: "#"}
+    N4: {tap: "4", shifted: "$"}
+    N5: {tap: "5", shifted: "%"}
+    N6: {tap: "6", shifted: "^"}
+    N7: {tap: "7", shifted: "&"}
+    N8: {tap: "8", shifted: "*"}
+    N9: {tap: "9", shifted: "("}
+    N0: {tap: "0", shifted: ")"}
+    MINUS: {tap: "-", shifted: "_"}
+    EQUAL: {tap: "=", shifted: "+"}
+    BSLH: {tap: "\\", shifted: "|"}
+    LBKT: {tap: "[", shifted: "{"}
+    RBKT: {tap: "]", shifted: "}"}
+    SEMI: {tap: ";", shifted: ":"}
+    SQT: {tap: "'", shifted: '"'}
+    COMMA: {tap: ",", shifted: "<"}
+    DOT: {tap: ".", shifted: ">"}
+    FSLH: {tap: "/", shifted: "?"}
+    GRAVE: {tap: "`", shifted: "~"}
+    BSPC: BACKSPACE
+    CLCK: CAPS
+    NUHS: "NON-US #"
+    NUBS: "NON-US \\"
+    PG_UP: PG UP
+    PG_DN: PG DN
+    LSHFT: LSHIFT
+    RSHFT: RSHIFT
+    LCTRL: LCTRL
+    LGUI: LGUI
+    LALT: LALT
+    RALT: RALT
+    UP: "↑"
+    LEFT: "←"
+    DOWN: "↓"
+    RIGHT: "→"
+
+  zmk_combos:
+    combo_sys_reset:
+      align: bottom
+      offset: 0.15
+    combo_rom_dfu:
+      align: top
+      offset: 0.15

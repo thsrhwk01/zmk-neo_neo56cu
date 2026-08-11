@@ -1,0 +1,18 @@
+dfu-util 0.11
+=============
+
+The Windows flasher bundle includes dfu-util.exe and libusb-1.0.dll from the
+official dfu-util 0.11 binary distribution:
+
+https://dfu-util.sourceforge.net/
+https://sourceforge.net/projects/dfu-util/files/
+
+dfu-util is distributed under the GNU General Public License version 2 or
+later. The bundle's third-party/dfu-util directory contains the upstream
+COPYING file, binary distribution notes, and the complete corresponding
+dfu-util-0.11.tar.gz source archive.
+
+The included libusb-1.0.dll was built upstream from libusb commit
+1a906274a66dd58bf81836db1306902d4a7dc185. Its corresponding source archive is
+also included in third-party/dfu-util. See the license files within that source
+archive for libusb's licensing terms.

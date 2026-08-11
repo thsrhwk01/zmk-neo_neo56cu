@@ -1,0 +1,28 @@
+name: Draw Neo65 CU keymap
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "**"
+    paths:
+      - "boards/arm/neo65cu/neo65cu.keymap"
+      - "config/neo65cu.json"
+      - ".github/workflows/draw-keymap.yml"
+      - "keymap_drawer.config.yaml"
+
+jobs:
+  draw:
+    uses: caksoylar/keymap-drawer/.github/workflows/draw-zmk.yml@3a4ca7e060a54ba700d3e7b6a43cb0b9cec347d2
+    permissions:
+      contents: write
+    with:
+      keymap_patterns: "boards/arm/neo65cu/neo65cu.keymap"
+      west_config_path: ""
+      json_path: "config"
+      parse_args: "neo65cu:'--layer-names Base Fn'"
+      draw_args: "neo65cu:'-l LAYOUT_wired'"
+      install_version: "0.23.0"
+      commit_message: "docs: update Neo65 CU keymap diagram"
+      destination: "commit"
+      fail_on_error: true

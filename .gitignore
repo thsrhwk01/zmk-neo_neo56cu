@@ -4,11 +4,18 @@ build/
 .west/
 zephyr_modules/
 
-# Vendor firmware and readbacks are recovery material, not source artifacts.
-neo65cu-wired.bin
-neo65cu-zmk*.bin
-neo65cu-*-backup.bin
-neo65cu-*-readback.bin
-neo65cu-*-readback-*.bin
+# Downloaded CI artifacts and local raw hardware photographs are evidence,
+# not source inputs. Keep them locally and in the external recovery backup.
+audit-neo65cu/
+firmware/
+/20260811_*.jpg
+
+# Vendor firmware, device readbacks, and flasher-created backups are not source.
+/neo65cu-wired.bin
+/neo65cu-zmk*.bin
+/neo65cu-*-backup*.bin
+/neo65cu-*-readback*.bin
+/tools/windows-flasher/backups/
+/package/
 
 .vscode/

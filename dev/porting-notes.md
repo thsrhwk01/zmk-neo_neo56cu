@@ -6,8 +6,10 @@
 2. mass erase와 option-byte 변경을 하지 않는다.
 3. 실기기 DFU descriptor와 readback을 확인하기 전에는 첫 플래시를 진행하지
    않는다.
-4. 자동 플래셔를 만들기 전에 수동 절차와 복구 절차를 실기기에서 각각 세 번
-   검증한다.
+4. 자동 플래셔는 실기기 검증 SHA-256, 정확한 DFU descriptor와 alt 0만 허용하고,
+   기록 전 128 KiB readback 및 기록 후 exact readback 검증을 fail-closed로
+   수행한다. 새 BIN은 같은 실기기 절차를 통과하기 전 배포 manifest에 등록하지
+   않는다.
 5. PCB 모델/리비전/MCU marking이 다르면 같은 firmware를 사용하지 않는다.
 
 ## 확인한 근거
@@ -82,10 +84,10 @@ NVIC와 memory map을 정리한 뒤, `MSR MSP` 이후 memory access가 없는 in
 trampoline으로 ROM Reset Handler에 분기합니다.
 
 Neo65 CU의 main PCB는 케이스에 고정된 daughterboard와 자석식 pogo pin으로
-접속합니다. 따라서 접속 상태에서 PCB 뒷면의 SW1을 누르기 어렵고, SW1을 유일한
-복구 수단으로 가정할 수 없습니다. 공식 Neo65/60 Cu 빌드 가이드의 Wired PCB
-firmware 절차도 Esc 스위치를 장착하고 Esc를 누른 채 USB를 다시 연결해 DFU에
-진입하도록 안내합니다:
+접속합니다. 따라서 완전 조립 상태에서는 PCB 뒷면 접점에 접근하기 어렵고, 이를
+유일한 복구 수단으로 가정할 수 없습니다. 공식 Neo65/60 Cu 빌드 가이드의
+Wired PCB firmware 절차도 Esc 스위치를 장착하고 Esc를 누른 채 USB를 다시
+연결해 DFU에 진입하도록 안내합니다:
 https://qwertykeys.notion.site/Neo65-60-Cu-Build-Guide-1863d090094280babee7ce4ff3901aa8
 
 ZMK 포트는 이 동작을 보존합니다. `PRE_KERNEL_1`에서 다른 GPIO/USB/ZMK 장치가
@@ -109,6 +111,35 @@ Neo65 CU에는 Link65 전용 `0x08006000` partition, APM32F103 MSP mask, early-s
 linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 
 ## 자동 빌드 검증
+
+### 배포 및 Windows 플래셔 gate
+
+LINK65 저장소의 build → package → tag release 흐름을 가져오되, LINK65 전용
+flash bootloader offset과 VID/PID는 사용하지 않습니다. Neo65 CU workflow는
+다음 순서를 강제합니다.
+
+1. 표준 ZMK reusable workflow와 독립 audit build를 각각 실행합니다.
+2. 두 raw BIN이 byte-for-byte 같은지 확인하고 전체 정적 audit를 통과시킵니다.
+3. built BIN이 [release/neo65cu-zmk.sha256](../release/neo65cu-zmk.sha256)의
+   실기기 검증 해시와 정확히 일치하는지 확인합니다.
+4. 검증된 dfu-util 0.11 Windows binary와 대응 source archive, 전용 스크립트를
+   `NEO65CU-ZMK-Windows` artifact로 묶습니다.
+5. `v*.*` tag push에서만 ZIP, raw BIN 및 외부 체크섬을 GitHub Release에
+   게시합니다.
+
+Windows 스크립트는 firmware/vector/hash 검사를 먼저 끝낸 뒤 사용자에게 GUI
+확인을 받습니다. 이어서 fresh `dfu-util -l`을 반복 실행해 정확히 한 개의
+`0483:df11` 장치가 verified alt 0/alt 1 memory descriptor를 모두 제공하는지
+확인하고, 그 path/serial만 사용합니다. 쓰기 전에는 alt 0 main flash 전체
+`0x20000` bytes를 자동 upload하며, 쓰기 뒤에는 BIN 길이만큼 다시 upload해
+SHA-256을 비교합니다. 실제 download 호출에는 항상 `-a 0 -s 0x08000000`만
+들어가며 alt 1, mass erase와 `:leave`는 없습니다.
+
+manifest 해시는 convenience checksum이 아니라 hardware-release 승인 gate입니다.
+source 변경으로 BIN이 달라지면 audit가 통과하더라도 package job이 실패해야
+정상입니다. 새 값을 manifest에 쓰려면 새 BIN으로 기존의 descriptor, pre-flash
+backup, immediate readback, cold boot, 전체 장착 키/LED 및 세 ROM DFU 복구 경로를
+다시 확인해야 합니다.
 
 ### 최종 정적 검증 후보
 
@@ -141,9 +172,13 @@ byte-for-byte 비교했습니다. 양쪽 성공 주석에 기록된 값은 동�
 | Reset Handler | `0x080024B5` |
 | nonzero handler vectors | 38 |
 
-`audit-neo65cu` artifact(ID `9040368094`)에는 정확히 검사한 `zmk.bin`, ELF, map,
-`.config`, generated DTS, symbols 및 disassembly가 들어 있습니다. GitHub가
-표시하는 artifact digest는 ZIP digest이므로 raw BIN SHA-256과 혼동하지 않습니다.
+검증에 사용한 `audit-neo65cu` artifact(ID `9040368094`)에는 `zmk.bin`, ELF, map,
+generated DTS, symbols 및 disassembly가 들어 있습니다. CI audit는 build
+directory의 `.config`도 검사했지만, 당시 artifact에는 upload-artifact의
+hidden-file 제외 동작 때문에 포함되지 않았습니다. 현재 workflow는 이후
+artifact에서 동일 파일을 `zephyr.config`라는 비숨김 이름으로 보관합니다. 이
+보관 수정은 감사 실행이나 BIN 내용에 영향을 주지 않습니다. GitHub가 표시하는
+artifact digest는 ZIP digest이므로 raw BIN SHA-256과 혼동하지 않습니다.
 
 검사는 다음 항목을 fail-closed로 고정합니다.
 
@@ -200,25 +235,100 @@ readback에 `vial:f64c2b3c` 식별 문자열이 있고, main code가 flash page 
 readback은 현재 설치된 Vial 포트를 되돌릴 때 사용하는 원본 복구 자료입니다.
 제공된 공식 BIN은 별도의 VIA 복구 자료로 유지합니다.
 
-## 실기기 검증 대기 항목
+## 2026-08-11 첫 ZMK 실기기 검증
 
-- [ ] PCB 실크와 MCU marking 사진 기록 (`STM32F072CBT6` 예상)
+PCB 뒷면 사진 3장에서 MCU marking `STM32F072CBT6`를 확인했습니다. QMK
+문서에는 PCB 하단의 물리 버튼을 `SW1`이라고 적었지만, 실제 PCB에는 버튼이
+실장되어 있지 않고 MCU 부근 하단에 실크 `SW?`와 2핀 through-hole footprint만
+있습니다.
+
+전원이 켜져 정상 입력 중일 때 이 두 패드를 쇼트해도 USB disconnect나 키 입력
+중단은 없었습니다. 반면 두 패드를 먼저 쇼트하고 USB 전원을 인가한 뒤 해제하면
+다음 system-ROM DFU descriptor가 열렸습니다.
+
+- VID/PID: `0483:df11`
+- serial: `FFFFFFFEFFFF`
+- alt 0: internal flash `0x08000000`, 64 × 2 KiB
+- alt 1: option bytes `0x1FFFF800` (선택하지 않음)
+
+따라서 이 footprint가 기능상 애플리케이션 독립적인 boot-selection 복구
+접점임을 확인했습니다. 회로도나 MCU pin continuity를 측정하지 않았으므로 정확한
+net 이름은 기록하지 않습니다.
+
+최종 raw BIN은 38,812 bytes이며 SHA-256은 다음과 같습니다.
+
+`63669C31092A134764A3B9BB48FF251312EAFF1B73EDF787DABD2427C6BBF74A`
+
+fresh `dfu-util -l` 결과의 path/serial을 지정하고 alt 0만 선택해
+`0x08000000`에 기록했습니다. erase와 download가 각각 100% 완료됐고, alt 1,
+mass erase 및 `:leave`는 사용하지 않았습니다. 같은 DFU session에서 재부팅 전에
+`0x08000000:0x979C`를 `neo65cu-zmk-first-flash-readback.bin`으로 upload했습니다.
+실제로 사용한 명령은 다음과 같습니다.
+
+```powershell
+dfu-util -d ",0483:df11" -p "2-2.3" -S "FFFFFFFEFFFF" `
+  -a 0 -s "0x08000000" `
+  -D ".\firmware\neo65cu-zmk.bin"
+
+dfu-util -d ",0483:df11" -p "2-2.3" -S "FFFFFFFEFFFF" `
+  -a 0 -s "0x08000000:0x979C" `
+  -U ".\neo65cu-zmk-first-flash-readback.bin"
+```
+
+USB path는 재연결 시 달라질 수 있으므로 이 값은 기록일 당시의 값이며, 재사용
+전에 반드시 fresh `dfu-util -l`로 다시 확인해야 합니다.
+
+readback 결과는 다음과 같습니다.
+
+- size: 38,812 bytes
+- SHA-256: `63669C31092A134764A3B9BB48FF251312EAFF1B73EDF787DABD2427C6BBF74A`
+- 배포 BIN과 exact match: `True`
+- Initial MSP: `0x20001E18`
+- Reset Handler: `0x080024B5`
+- invalid vector: 0
+
+USB를 완전히 분리한 뒤 아무 키 없이 세 차례 cold boot해 정상 USB enumeration,
+Windows 키 입력과 Caps Lock LED 전환을 확인했습니다. 이어서 다음 두
+애플리케이션 복구 경로도 각각
+`0483:df11` system-ROM DFU 진입에 성공했습니다.
+
+1. Esc를 누른 채 USB 연결
+2. 정상 실행 중 `Esc + Delete + Left Ctrl + Right Arrow` 동시 입력
+
+이로써 하드웨어 `SW?`, ZMK 조기 Esc, 실행 중 four-corner combo의 세 ROM DFU
+진입 경로가 실기기에서 확인됐습니다.
+
+현재 장착된 layout의 모든 키를 개별 검사했습니다. 각 키는 정확히 하나의
+입력만 발생했고, release 뒤 잔류 입력이나 인접 키 동시 입력이 없었습니다.
+Fn 키와 `Fn + Esc`, `Fn + 1`부터 `Fn + =`까지의 Grave/F1-F12 레이어도
+정상 동작했습니다. 미장착 ISO/split optional footprint는 이 검사에 포함하지
+않았습니다.
+
+정상 실행 중 `Backspace + Left Ctrl + Left Alt`를 동시에 입력했을 때 USB가
+끊겼다가 ZMK 애플리케이션으로 정상 재연결됐으며, 이후 키 입력도 정상임을
+확인했습니다.
+
+## 실기기 검증 결과 및 선택 잔여 항목
+
+- [x] PCB 실크와 MCU marking 사진 기록 (`STM32F072CBT6`)
 - [x] 현재 Vial에서 hold-Esc로 DFU 진입 확인
-- [ ] ZMK 초기 부팅 hold-Esc로 DFU 재진입 확인
-- [ ] PCB 뒷면 SW1 위치와 pogo-pin 접속 중 접근 가능 여부 기록
+- [x] ZMK 초기 부팅 hold-Esc로 DFU 재진입 확인
+- [x] PCB 뒷면 미실장 `SW?` 위치와 power-on hardware DFU 동작 기록
 - [x] DFU VID/PID `0483:df11` 확인
 - [x] alternate setting과 memory descriptor 원문 기록
 - [x] main flash 128 KiB readback 및 SHA-256 기록
-- [ ] official BIN 복원 성공 확인
+- [x] 최종 ZMK BIN alt 0 기록 및 동일 길이 readback exact-match 확인
 - [x] ZMK image/ELF/map/config/DTS 및 배포 BIN 동일성 정적 검사
       (Actions run #31321651375)
-- [ ] ZMK USB enumeration 3회 cold-plug 확인
-- [ ] 70개 matrix 위치 및 optional layout footprints 확인
-- [ ] 단일 키 입력 시 인접 키 동시 입력/잔류 여부 확인
-- [ ] Caps Lock LED active-high 확인
-- [ ] four-corner combo로 ROM DFU 진입 확인
-- [ ] ROM DFU에서 official BIN 복원 확인
-- [ ] 각 단계 뒤 cold-plug Esc DFU 진입 재확인
+- [x] ZMK USB enumeration 3회 cold-plug 확인
+- [x] 현재 장착 layout의 모든 키와 Fn 레이어 확인
+- [ ] 미장착 ISO/split optional layout footprints 확인
+- [x] 단일 키 입력 시 인접 키 동시 입력/잔류 없음 확인
+- [x] Caps Lock LED active-high 확인
+- [x] `Backspace + Left Ctrl + Left Alt` 애플리케이션 재시작 확인
+- [x] four-corner combo로 ROM DFU 진입 확인
+- [ ] official/Vial 원본 복구 드릴 (정상 보드의 불필요한 재기록을 피하려고 미실행)
+- [x] 첫 ZMK flash 뒤 cold-plug Esc DFU 재진입 확인
 
 실기기 결과는 날짜, source commit, firmware SHA-256, 사용한 정확한 명령과 함께
 이 문서에 추가합니다.
