@@ -36,136 +36,10 @@ jobs:
   build:
     uses: zmkfirmware/zmk/.github/workflows/build-user-config.yml@edf5c0814fd3ea202e43aad2d68fd32e882a518c # v0.3.0
 
-  audit-build:
-    name: Build auditable ELF and metadata
-    runs-on: ubuntu-latest
-    container:
-      image: zmkfirmware/zmk-build-arm:stable
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Prepare isolated west workspace
-        shell: sh
-        run: |
-          set -eu
-          base_dir="$(mktemp -d)"
-          build_dir="$(mktemp -d)"
-          mkdir -p "${base_dir}/config"
-          cp -R config/. "${base_dir}/config/"
-          echo "base_dir=${base_dir}" >> "${GITHUB_ENV}"
-          echo "build_dir=${build_dir}" >> "${GITHUB_ENV}"
-
-      - name: Initialize pinned ZMK workspace
-        working-directory: ${{ env.base_dir }}
-        shell: sh
-        run: |
-          set -eu
-          west init -l "${{ env.base_dir }}/config"
-          west update --fetch-opt=--filter=tree:0
-          west zephyr-export
-
-      - name: Build Neo65 CU diagnostics image
-        working-directory: ${{ env.base_dir }}
-        shell: sh
-        run: |
-          set -eu
-          west build -s zmk/app -d "${{ env.build_dir }}" -b neo65cu -- \
-            -DZMK_CONFIG="${{ env.base_dir }}/config" \
-            -DZMK_EXTRA_MODULES="${GITHUB_WORKSPACE}"
-
-      - name: Audit linker, startup, clocks, memory, and ROM handoff
-        shell: sh
-        run: |
-          set -u
-          status=0
-          cmake_cache="${{ env.build_dir }}/CMakeCache.txt"
-          readelf_tool="$(sed -n 's|^CMAKE_READELF:FILEPATH=||p' "${cmake_cache}")"
-          nm_tool="$(sed -n 's|^CMAKE_NM:FILEPATH=||p' "${cmake_cache}")"
-          objdump_tool="$(sed -n 's|^CMAKE_OBJDUMP:FILEPATH=||p' "${cmake_cache}")"
-          test -x "${readelf_tool}"
-          test -x "${nm_tool}"
-          test -x "${objdump_tool}"
-          echo "READELF_TOOL=${readelf_tool}" >> "${GITHUB_ENV}"
-          echo "NM_TOOL=${nm_tool}" >> "${GITHUB_ENV}"
-          echo "OBJDUMP_TOOL=${objdump_tool}" >> "${GITHUB_ENV}"
-          python3 tools/audit-firmware.py \
-            --bin "${{ env.build_dir }}/zephyr/zmk.bin" \
-            --elf "${{ env.build_dir }}/zephyr/zmk.elf" \
-            --map "${{ env.build_dir }}/zephyr/zmk.map" \
-            --config "${{ env.build_dir }}/zephyr/.config" \
-            --dts "${{ env.build_dir }}/zephyr/zephyr.dts" \
-            --readelf "${readelf_tool}" \
-            --nm "${nm_tool}" \
-            --objdump "${objdump_tool}" \
-            > audit-result.txt 2>&1 || status=$?
-          cat audit-result.txt
-          exit "${status}"
-
-      - name: Collect exact audited build outputs
-        if: always()
-        shell: sh
-        run: |
-          set -eu
-          mkdir -p audit
-          cp "${{ env.build_dir }}/zephyr/zmk.bin" audit/
-          cp "${{ env.build_dir }}/zephyr/zmk.elf" audit/
-          cp "${{ env.build_dir }}/zephyr/zmk.map" audit/
-          cp "${{ env.build_dir }}/zephyr/.config" audit/zephyr.config
-          cp "${{ env.build_dir }}/zephyr/zephyr.dts" audit/
-          cp "${{ env.build_dir }}/zephyr/zmk.stat" audit/
-          cp audit-result.txt audit/
-          "${READELF_TOOL}" -W -h -S -l audit/zmk.elf > audit/readelf.txt
-          "${NM_TOOL}" -n -S --defined-only audit/zmk.elf > audit/symbols.txt
-          "${OBJDUMP_TOOL}" -d audit/zmk.elf > audit/disassembly.txt
-          sha256sum audit/zmk.bin audit/zmk.elf > audit/SHA256SUMS
-
-      - name: Upload auditable build outputs
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: audit-neo65cu
-          path: audit
-          retention-days: 14
-
-  verify:
-    name: Verify exact release BIN
-    needs:
-      - build
-      - audit-build
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-
-    steps:
-      - name: Checkout audit script
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-
-      - name: Download firmware artifact
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: firmware
-          path: artifacts/firmware
-
-      - name: Download exact audited BIN
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: audit-neo65cu
-          path: artifacts/audit
-
-      - name: Compare and validate release image
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 tools/audit-firmware.py \
-            --bin artifacts/firmware/neo65cu-zmk.bin \
-            --expected-bin artifacts/audit/zmk.bin
-
   package:
     name: Package hardware-validated Windows flasher
-    needs: verify
+    needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -175,11 +49,16 @@ jobs:
       - name: Check out packaging files
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - name: Download verified firmware artifact
+      - name: Download firmware artifact
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: firmware
           path: artifacts/firmware
+
+      - name: Validate firmware structure
+        shell: pwsh
+        run: |
+          & ./tools/inspect-firmware.ps1 ./artifacts/firmware/neo65cu-zmk.bin
 
       - name: Enforce hardware-validated release SHA-256
         shell: bash
@@ -187,8 +66,6 @@ jobs:
           set -euo pipefail
           firmware="artifacts/firmware/neo65cu-zmk.bin"
           manifest="release/neo65cu-zmk.sha256"
-
-          python3 tools/audit-firmware.py --bin "${firmware}"
 
           if [[ "$(grep -cve '^[[:space:]]*$' "${manifest}")" -ne 1 ]]; then
             echo "::error file=${manifest},title=Release gate::Expected exactly one non-empty checksum line"

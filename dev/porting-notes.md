@@ -78,8 +78,8 @@ pre-C hook은 다음 순서로 동작합니다.
 5. `z_arm_prep_c()`가 48-word vector를 SRAM `0x20000000`에 복사하고 SRAM을
    0번지로 remap합니다.
 
-최종 ELF audit는 위 세 함수 호출 순서와 SRAM vector 크기/주소를 symbol 및
-disassembly로 확인합니다. application에서 ROM으로 갈 때는 반대로 SysTick,
+초기 bring-up의 ELF/symbol/disassembly 검사로 위 세 함수 호출 순서와 SRAM
+vector 크기/주소를 확인했습니다. application에서 ROM으로 갈 때는 반대로 SysTick,
 NVIC와 memory map을 정리한 뒤, `MSR MSP` 이후 memory access가 없는 inline-asm
 trampoline으로 ROM Reset Handler에 분기합니다.
 
@@ -110,21 +110,20 @@ system-ROM DFU로 분기합니다. Esc가 아니면 변경한 GPIO/RCC register�
 Neo65 CU에는 Link65 전용 `0x08006000` partition, APM32F103 MSP mask, early-stack
 linker snippet, `1688:2220` VID/PID를 적용하지 않았습니다.
 
-## 자동 빌드 검증
-
-### 배포 및 Windows 플래셔 gate
+## 자동 빌드와 배포
 
 LINK65 저장소의 build → package → tag release 흐름을 가져오되, LINK65 전용
-flash bootloader offset과 VID/PID는 사용하지 않습니다. Neo65 CU workflow는
-다음 순서를 강제합니다.
+flash bootloader offset과 VID/PID는 사용하지 않습니다. 현재 Neo65 CU workflow는
+다음 순서로 동작합니다.
 
-1. 표준 ZMK reusable workflow와 독립 audit build를 각각 실행합니다.
-2. 두 raw BIN이 byte-for-byte 같은지 확인하고 전체 정적 audit를 통과시킵니다.
+1. 고정한 ZMK commit으로 표준 ZMK reusable workflow를 한 번 실행합니다.
+2. `inspect-firmware.ps1`로 raw BIN의 크기, MSP, Reset Handler와 vector 주소를
+   확인합니다.
 3. built BIN이 [release/neo65cu-zmk.sha256](../release/neo65cu-zmk.sha256)의
    실기기 검증 해시와 정확히 일치하는지 확인합니다.
 4. 검증된 dfu-util 0.11 Windows binary와 대응 source archive, 전용 스크립트를
-   `NEO65CU-ZMK-Windows` artifact로 묶습니다.
-5. `v*.*` tag push에서만 ZIP, raw BIN 및 외부 체크섬을 GitHub Release에
+   `NEO65CU-ZMK-Windows` artifact로 묶고 `-ValidateOnly` 검사를 실행합니다.
+5. `v*.*` tag push에는 ZIP, raw BIN 및 외부 체크섬을 GitHub Release에도
    게시합니다.
 
 Windows 스크립트는 firmware/vector/hash 검사를 먼저 끝낸 뒤 사용자에게 GUI
@@ -136,30 +135,17 @@ SHA-256을 비교합니다. 실제 download 호출에는 항상 `-a 0 -s 0x08000
 들어가며 alt 1, mass erase와 `:leave`는 없습니다.
 
 manifest 해시는 convenience checksum이 아니라 hardware-release 승인 gate입니다.
-source 변경으로 BIN이 달라지면 audit가 통과하더라도 package job이 실패해야
-정상입니다. 새 값을 manifest에 쓰려면 새 BIN으로 기존의 descriptor, pre-flash
+source 변경으로 BIN이 달라지면 build와 구조 검사가 통과하더라도 package job이
+실패해야 정상입니다. 새 값을 manifest에 쓰려면 새 BIN으로 기존의 descriptor, pre-flash
 backup, immediate readback, cold boot, 전체 장착 키/LED 및 세 ROM DFU 복구 경로를
 다시 확인해야 합니다.
 
-### 최종 정적 검증 후보
+### 실기기 승인 공개 이미지
 
 2026-08-10에 source commit
 `2a36f566802fbc65287ddc931ae285326bfa16f5`를 대상으로 실행한
 [GitHub Actions run #31321651375](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/runs/31321651375)의
-모든 job이 성공했습니다.
-
-| job | 결과 |
-| --- | --- |
-| `Fetch Build Keyboards` | success |
-| 표준 ZMK `Build (neo65cu)` | success |
-| `Merge Output Artifacts` | success |
-| 독립 `Build auditable ELF and metadata` | success |
-| `Verify exact release BIN` | success |
-
-두 빌드는 서로 독립된 west workspace에서 정확히 고정한 ZMK commit
-`edf5c0814fd3ea202e43aad2d68fd32e882a518c`를 사용합니다. 독립 빌드의
-ELF/map/config/generated DTS를 감사한 뒤, 표준 `firmware` artifact의 raw BIN과
-byte-for-byte 비교했습니다. 양쪽 성공 주석에 기록된 값은 동일합니다.
+모든 build 및 당시 심층 검사 job이 성공했습니다.
 
 | 항목 | 값 |
 | --- | --- |
@@ -172,40 +158,12 @@ byte-for-byte 비교했습니다. 양쪽 성공 주석에 기록된 값은 동�
 | Reset Handler | `0x080024B5` |
 | nonzero handler vectors | 38 |
 
-검증에 사용한 `audit-neo65cu` artifact(ID `9040368094`)에는 `zmk.bin`, ELF, map,
-generated DTS, symbols 및 disassembly가 들어 있습니다. CI audit는 build
-directory의 `.config`도 검사했지만, 당시 artifact에는 upload-artifact의
-hidden-file 제외 동작 때문에 포함되지 않았습니다. 현재 workflow는 이후
-artifact에서 동일 파일을 `zephyr.config`라는 비숨김 이름으로 보관합니다. 이
-보관 수정은 감사 실행이나 BIN 내용에 영향을 주지 않습니다. GitHub가 표시하는
-artifact digest는 ZIP digest이므로 raw BIN SHA-256과 혼동하지 않습니다.
-
-검사는 다음 항목을 fail-closed로 고정합니다.
-
-- 48개 vector 전체와 USB IRQ 31, ELF LOAD와 raw BIN payload 경계
-- main flash/SRAM/linker partition, main stack/MSP, SRAM vector 및 RAM 여유
-- pre-C platform/architecture/C startup과 SoC/Esc/clock init 순서
-- ROM 주소/vector, SRAM marker 및 MSP 변경 뒤 stack access 없는 jump tail
-- HSI/PLL/USB clock tree, oscillator 상태, endpoint와 PA11/PA12
-- QMK와 동일한 70개 transform, matrix GPIO/flags, LED와 recovery combo
-- flash/settings/NVS/filesystem/watchdog 비활성화와 write symbol 부재
-- 표준 배포 BIN과 감사 BIN의 완전 동일성
-
-### 감사 도구를 다듬은 과정
-
-- run `#31319558952`: 실제 map의 section 줄바꿈 형식을 parser가 잘못 가정
-- run `#31319948476`: Actions container의 ARM binutils 절대 경로를 찾지 못함
-- run `#31321068519`: 사용 끝 symbol인 `__rom_region_end`를 flash region 끝으로
-  잘못 해석
-- run `#31321291929`: 동일 주소의 reset symbol alias 때문에 제한 disassembly가
-  비어 있었음
-
-각 경우 표준/독립 firmware build 자체는 성공했고, 실패 원인은 강화 중인 audit
-harness의 오탐이었습니다. map 형식, CMake가 기록한 실제 tool 경로, symbol 의미,
-linked reset 주소 범위를 사용하도록 각각 수정한 뒤 최종 run에서 전부
-통과했습니다. 초기 `359CA48E...`, 이후 로컬에 받았던 `98FE8504...` 등 최종
-SHA-256과 다른 BIN은 모두 폐기 후보입니다. 이 전체 과정에서 실기기 download,
-erase 또는 option-byte 명령은 실행하지 않았습니다.
+초기 포트의 bring-up 단계에서는 별도의 ELF/map/config/DTS build와 표준 BIN 비교도
+수행했습니다. 해당 일회성 검사 코드는 실기기 검증 완료 후 active workflow와
+저장소에서 제거했습니다. 현재 CI에 남은 경량 검사는 부트 가능한 이미지를 증명하는
+대신 명백히 잘못된 크기·MSP·vector와 승인되지 않은 hash의 배포를 차단합니다.
+GitHub가 표시하는 artifact digest는 ZIP digest이므로 raw BIN SHA-256과 혼동하지
+않습니다.
 
 ## 실기기 DFU 및 원본 readback 확인
 
@@ -332,3 +290,19 @@ Fn 키와 `Fn + Esc`, `Fn + 1`부터 `Fn + =`까지의 Grave/F1-F12 레이어도
 
 실기기 결과는 날짜, source commit, firmware SHA-256, 사용한 정확한 명령과 함께
 이 문서에 추가합니다.
+
+## 2026-08-12 키맵 입력 지연 정리
+
+기존 애플리케이션 재시작 및 ROM DFU combo의 구성 키는 combo timeout 동안 단독
+입력이 보류되어 일반적인 Backspace, Ctrl, Alt, Esc, Delete와 화살표 사용에서
+지연이 느껴졌습니다. 두 combo를 제거하고 같은 behavior를 Fn 레이어의
+`Fn + Backspace`와 `Fn + Delete`에 각각 배치했습니다.
+
+Keymap Editor용 `config/neo65cu.json`의 `row`/`col`은 전기적 matrix 좌표가 아니라
+시각적 레이아웃 내 순번입니다. 네 번째 행을 `row 3, col 0..14`, 하단 행을
+`row 4, col 0..8`로 정리했습니다. 실제 kscan 및 matrix transform은 변경하지
+않았습니다.
+
+이 변경으로 생성되는 새 BIN은 build 및 구조 검사 뒤 `Fn + Backspace`,
+`Fn + Delete`, 일반 구성 키의 지연 해소를 실제 보드에서 확인하기 전까지 release
+manifest에 승인하지 않습니다.

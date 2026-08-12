@@ -16,7 +16,7 @@ is to show how each hardware contract was established independently:
 - How a Cortex-M0 application and ROM bootloader exchange control without VTOR
 - Which clock path supplies the required 48 MHz to USB
 - Matrix pin order, scan direction, polarity, timing, and optional positions
-- How a built BIN was tied to an audited ELF and then to a physical readback
+- How a built BIN was inspected and then tied to a physical readback
 
 > [!WARNING]
 > Every address, USB ID, GPIO, and recovery gesture below was verified for the
@@ -206,8 +206,9 @@ The repository provides a basic PowerShell inspector:
 .\tools\inspect-firmware.ps1 .\neo65cu-zmk.bin
 ```
 
-The CI audit goes further by comparing the BIN with ELF load segments,
-symbols, the linker map, generated Kconfig, and generated devicetree.
+During initial bring-up, the BIN was also compared with ELF load segments,
+symbols, the linker map, generated Kconfig, and generated devicetree. The active
+release workflow now retains the lightweight raw-BIN checks above.
 
 ## 5. Handle both sides of the Cortex-M0 ROM handoff
 
@@ -224,7 +225,7 @@ This creates two separate handoff problems:
 - When ZMK enters ROM DFU, the ROM vector table must be mapped at zero before
   interrupts are enabled there.
 
-Both directions must be implemented and audited.
+Both directions must be implemented and verified.
 
 ### 5.2 Clean inherited ROM state before Zephyr starts
 
@@ -245,7 +246,7 @@ Zephyr copies the 48-word application vector table to SRAM `0x20000000` before
 mapping SRAM at zero. `CONFIG_PLATFORM_SPECIFIC_INIT=y` ensures the SYSCFG
 clock is ready before that remap.
 
-CI verifies the linked call order:
+The linked call order was verified during initial bring-up:
 
 ```text
 z_arm_platform_init
@@ -272,8 +273,9 @@ At `PRE_KERNEL_1` priority 0, before the normal clock driver:
 5. A small assembly trampoline restores `CONTROL`, replaces MSP, enables
    interrupts, and branches to the ROM Reset Handler.
 
-The audit disassembles that trampoline and rejects any load, store, push, or
-pop after `MSR MSP`. The ROM entry cannot return to the old stack.
+During bring-up, the linked trampoline was disassembled to confirm there is no
+load, store, push, or pop after `MSR MSP`. The ROM entry cannot return to the old
+stack.
 
 The same source preserves the vendor's hold-Esc recovery gesture. Before
 Zephyr GPIO, USB, or ZMK starts, it temporarily drives PA6 low and reads PC14
@@ -281,14 +283,16 @@ with a pull-up. If Esc is not held, every touched GPIO and RCC register is
 restored. If it is held, the code requests ROM DFU through the same SRAM-only
 marker path.
 
-The runtime four-corner combo is:
+The runtime ROM-DFU binding is:
 
 ```text
-Esc + Delete + Left Ctrl + Right Arrow
+Fn + Delete
 ```
 
-The distant keys and 150 ms timeout reduce accidental activation. The combo
-does not erase or program flash.
+The original four-corner combo was removed because its timeout delayed normal
+Esc, Delete, Ctrl, and arrow-key input. A dedicated Fn-layer binding invokes the
+same SRAM-only handoff and does not erase or program flash. `Fn + Backspace`
+similarly invokes `&sys_reset` without making Backspace, Ctrl, or Alt combo keys.
 
 ## 6. Prove the USB clock and pins
 
@@ -400,7 +404,7 @@ Windows rather than inferred only from a schematic or QMK macro.
 | [`neo65cu_defconfig`](../boards/arm/neo65cu/neo65cu_defconfig) | SoC, USB, polling, timing, stacks, and early-init settings |
 | [`Kconfig.board`](../boards/arm/neo65cu/Kconfig.board) | Board selection and STM32F072 dependency |
 | [`Kconfig.defconfig`](../boards/arm/neo65cu/Kconfig.defconfig) | ZMK board name and defaults |
-| [`neo65cu.keymap`](../boards/arm/neo65cu/neo65cu.keymap) | Base/Fn layers and reset/ROM-DFU combos |
+| [`neo65cu.keymap`](../boards/arm/neo65cu/neo65cu.keymap) | Base/Fn layers and reset/ROM-DFU bindings |
 | [`neo65cu.zmk.yml`](../boards/arm/neo65cu/neo65cu.zmk.yml) | ZMK board metadata |
 | [`behavior binding`](../dts/bindings/behaviors/zmk,behavior-neo65cu-rom-dfu.yaml) | Devicetree schema for the ROM DFU behavior |
 | [`behavior_neo65cu_rom_dfu.c`](../src/behavior_neo65cu_rom_dfu.c) | Early Esc scan, SRAM marker, and ROM handoff |
@@ -410,7 +414,7 @@ Windows rather than inferred only from a schematic or QMK macro.
 | [`zephyr/module.yml`](../zephyr/module.yml) | Board and DTS module roots |
 | [`build.yaml`](../build.yaml) | ZMK build matrix |
 | [`config/west.yml`](../config/west.yml) | Exact pinned ZMK revision |
-| [`audit-firmware.py`](../tools/audit-firmware.py) | BIN/ELF/map/config/DTS fail-closed audit |
+| [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) | Lightweight raw-BIN vector and address validation |
 
 The project is pinned to the exact commit behind ZMK `v0.3.0`:
 
@@ -423,59 +427,34 @@ stream-flash, watchdog, Bluetooth, MCUboot, software vector relay, and ZMK
 Studio are disabled. This reduces RAM/flash pressure and prevents a normal ZMK
 feature from writing persistent data during initial bring-up.
 
-## 9. Build an independently auditable image
+## 9. Build and validate the release image
 
-The main [Build and Release workflow](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/workflows/build.yml)
-runs two builds against the same pinned ZMK commit:
+The main [Build and Release workflow](../.github/workflows/build.yml) uses the
+standard reusable ZMK user-config build against the pinned ZMK commit:
 
-1. The standard reusable ZMK user-config workflow produces the distributable
-   `firmware` artifact.
-2. A separate west workspace produces `zmk.bin`, `zmk.elf`, `zmk.map`,
-   `zephyr.config`, generated `zephyr.dts`, symbols, and disassembly.
-3. [`audit-firmware.py`](../tools/audit-firmware.py) validates the independent
-   build.
-4. A later job proves that the standard-workflow BIN is byte-for-byte equal to
-   the independently audited BIN.
+1. The standard workflow produces the distributable `firmware` artifact.
+2. [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) checks the BIN size,
+   MSP, Reset Handler, required vectors, and every nonzero handler address.
+3. The package job requires an exact match with the hardware-approved raw-BIN
+   hash.
+4. The packaged Windows flasher is run with `-ValidateOnly` before upload.
 
-The audit rejects changes to all of the following:
+Branch pushes and manual runs create the firmware and, for an approved BIN, the
+Windows-flasher artifact. Version tags additionally publish a GitHub Release.
+Pull requests only build the firmware.
 
-- 48-word vector table, required core vectors, and USB IRQ 31
-- Main flash/SRAM boundaries and every file-backed ELF LOAD segment
-- Zero flash offset, exact BIN payload, main stack/MSP, SRAM vector location,
-  and at least 4 KiB RAM headroom
-- Ordered pre-C platform, architecture, and C startup calls
-- Ordered SoC, early recovery, and clock initialization
-- ROM vector bounds, 8-byte SRAM marker, and the stack-free jump tail
-- HSI × 6 PLL, 48 MHz USB clock, PA11/PA12, oscillator states, and endpoints
-- Exact 70-position transform, GPIO order/flags, polling, LED, and recovery
-  combo
-- Disabled storage/settings/Studio/watchdog features and absence of linked
-  persistent-write symbols
+The initial port used a separate ELF/map/config/DTS inspection build and an
+exact comparison with the standard artifact. That deeper one-time bring-up
+inspection was removed from the active workflow after the image was validated
+on hardware; its conclusions remain documented in the implementation sections
+above.
 
-### 9.1 Audit harness failures during bring-up
-
-The firmware builds succeeded before the audit harness did. These failed runs
-were false positives in the strengthening inspection code, not images flashed
-to the board:
-
-| Run | What failed | Correction |
-| --- | --- | --- |
-| `31319558952` | The map parser assumed a section stayed on one line | Parse the actual wrapped linker-map format |
-| `31319948476` | The container's ARM binutils path was guessed | Read exact tool paths from `CMakeCache.txt` |
-| `31321068519` | `__rom_region_end` was treated as the whole flash end | Interpret it as the end of linked ROM payload |
-| `31321291929` | A reset-symbol alias made limited disassembly empty | Disassemble the linked reset address range |
-| `31321651375` | Final independent audit and exact BIN comparison | Passed |
-
-No device erase, download, or option-byte operation occurred during those CI
-iterations. Candidate BINs with hashes such as `359CA48E...` and
-`98FE8504...` were discarded rather than approved.
-
-### 9.2 Hardware-approved release gate
+### 9.1 Hardware-approved release gate
 
 [`release/neo65cu-zmk.sha256`](../release/neo65cu-zmk.sha256) is not a
 convenience checksum. The package job fails unless the new build equals the
-single hardware-approved raw BIN hash. A source or keymap change may pass the
-static audit but must not silently become a release.
+single hardware-approved raw BIN hash. A source or keymap change must not
+silently become a release merely because it builds and passes structural checks.
 
 Updating the manifest requires a new pre-flash backup, immediate readback,
 cold-boot test, complete installed-key/Fn/LED test, application reset, and all
@@ -500,7 +479,7 @@ everyday recovery method. Hold-Esc is the normal method.
 ### 10.2 Write only the validated main-flash image
 
 The following is the sequence used for the first verified image. It is shown
-for auditability, not as permission to skip the checks in Sections 2 and 3.
+for reproducibility, not as permission to skip the checks in Sections 2 and 3.
 Obtain path and serial from a fresh listing, confirm both descriptors, and
 complete the 128 KiB backup first.
 
@@ -541,6 +520,11 @@ The test proceeded in recovery-first order:
 9. From ZMK, press the four-corner combo and reconfirm ROM DFU.
 10. Use the rear `SW?` contact at power-on and reconfirm ROM DFU.
 
+These initial acceptance results predate the latency-motivated keymap change.
+The same tested behaviors are now bound to `Fn + Backspace` and `Fn + Delete`;
+those new bindings must be included in the next hardware-validation pass before
+the release manifest is updated.
+
 An official/Vial restoration drill was intentionally not performed on the
 working board because it would add unnecessary erase/write cycles. Both full
 readbacks, the stock BIN, dfu-util environment, exact hashes, and recovery
@@ -569,7 +553,7 @@ The script has no alt-1 download, option-byte write, mass erase, or automatic
 | Caps Lock types correctly but LED does not change | PC13 polarity, HID indicator support, event listener initialization, and host LED state |
 | Runtime `SW?` short does nothing | Expected behavior; the contact was only observed at power-on |
 | Hold-Esc does not enter DFU | PA6/PC14 intersection, cold-plug timing, data cable, and whether another key is electrically holding the row/column |
-| Four-corner combo restarts but no DFU appears | SRAM marker/link placement, ROM vector validation, SYSCFG remap, and jump-trampoline disassembly |
+| `Fn + Delete` restarts but no DFU appears | Fn binding, SRAM marker/link placement, ROM vector validation, SYSCFG remap, and jump-trampoline disassembly |
 | DFU descriptor differs from the documented map | Stop; do not write or assume it is the same PCB revision |
 | Only unrelated or inaccessible DFU devices appear | Recheck cable/driver/port and identify `0483:df11`; never operate on an uncertain target |
 
@@ -603,7 +587,7 @@ and readback.
 - [ ] Confirm the 48-word SRAM vector table and early-init call order.
 - [ ] Inspect the ROM jump tail after `MSR MSP` for stack/memory access.
 - [ ] Confirm that no persistent flash-write symbol is linked.
-- [ ] Compare the standard ZMK BIN with the independently audited BIN.
+- [ ] Run the raw-BIN vector and address validator.
 - [ ] Match the raw BIN to the hardware-approved SHA-256.
 - [ ] Re-list DFU and capture the current path/serial.
 - [ ] Complete and verify a 131,072-byte pre-flash backup.
@@ -616,7 +600,7 @@ and readback.
 - [ ] Test every installed key alone, including the full Fn layer.
 - [ ] Confirm Caps Lock LED behavior.
 - [ ] Confirm application reset separately from ROM DFU entry.
-- [ ] Re-test hold-Esc, runtime combo, and hardware power-on ROM DFU paths.
+- [ ] Re-test hold-Esc, `Fn + Delete`, and hardware power-on ROM DFU paths.
 - [ ] Record source commit, Actions run, raw BIN hash, readback hash, date, and
       remaining unpopulated positions.
 - [ ] Keep recovery images outside the public source repository.

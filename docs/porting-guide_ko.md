@@ -18,7 +18,7 @@ ZMK를 포팅하면서 확인한 근거, 설계 결정, 실패한 검사와 실�
   방법
 - USB에 필요한 정확한 48 MHz를 만드는 clock path
 - Matrix pin 순서, scan 방향, 극성, timing 및 optional 위치
-- 빌드 BIN을 감사한 ELF와 연결하고 다시 실제 보드의 readback과 연결한 방법
+- 빌드 BIN을 검사하고 다시 실제 보드의 readback과 연결한 방법
 
 > [!WARNING]
 > 아래의 모든 주소, USB ID, GPIO와 복구 동작은
@@ -204,8 +204,9 @@ Raw application BIN은 다음 조건을 만족해야 합니다.
 .\tools\inspect-firmware.ps1 .\neo65cu-zmk.bin
 ```
 
-CI audit는 BIN을 ELF LOAD segment, symbol, linker map, 생성된 Kconfig와 생성된
-devicetree까지 연결해 더 강하게 검사합니다.
+초기 bring-up에서는 BIN을 ELF LOAD segment, symbol, linker map, 생성된 Kconfig와
+devicetree까지 연결해 확인했습니다. 현재 release workflow에는 위의 경량 raw-BIN
+검사만 유지합니다.
 
 ## 5. Cortex-M0 ROM handoff의 양쪽 방향 처리
 
@@ -222,7 +223,7 @@ main flash, system ROM 또는 SRAM을 `0x00000000`에 alias합니다.
 - ZMK가 ROM DFU로 들어갈 때 ROM에서 interrupt를 활성화하기 전에 ROM vector를
   0번지에 매핑해야 합니다.
 
-두 방향을 모두 구현하고 감사해야 합니다.
+두 방향을 모두 구현하고 검증해야 합니다.
 
 ### 5.2 Zephyr 시작 전에 ROM이 남긴 상태 정리
 
@@ -244,7 +245,7 @@ Zephyr는 48-word 애플리케이션 vector table을 SRAM `0x20000000`에 복사
 SRAM을 0번지에 매핑합니다. `CONFIG_PLATFORM_SPECIFIC_INIT=y`가 그 remap 전에
 SYSCFG clock이 준비되도록 보장합니다.
 
-CI는 실제 링크 결과의 호출 순서를 검사합니다.
+초기 bring-up에서 실제 링크 결과의 호출 순서를 확인했습니다.
 
 ```text
 z_arm_platform_init
@@ -271,22 +272,24 @@ z_arm_platform_init
 5. 작은 assembly trampoline이 `CONTROL`을 복원하고 MSP를 교체한 뒤 interrupt를
    활성화해 ROM Reset Handler로 분기합니다.
 
-Audit는 trampoline을 disassemble하여 `MSR MSP` 뒤에 load, store, push 또는 pop이
-하나라도 있으면 실패시킵니다. ROM 진입 뒤 기존 stack으로 돌아올 수 없습니다.
+Bring-up 중 linked trampoline을 disassemble하여 `MSR MSP` 뒤에 load, store, push
+또는 pop이 없음을 확인했습니다. ROM 진입 뒤 기존 stack으로 돌아올 수 없습니다.
 
 같은 소스가 원본 펌웨어의 hold-Esc 복구 동작도 유지합니다. Zephyr GPIO, USB,
 ZMK가 시작하기 전에 PA6을 잠시 low로 구동하고 PC14를 pull-up 입력으로 읽습니다.
 Esc가 눌리지 않았다면 건드린 GPIO와 RCC register를 모두 복원합니다. 눌려 있다면
 같은 SRAM-only marker 경로로 ROM DFU를 요청합니다.
 
-실행 중 사용하는 four-corner combo는 다음과 같습니다.
+실행 중 사용하는 ROM DFU binding은 다음과 같습니다.
 
 ```text
-Esc + Delete + Left Ctrl + Right Arrow
+Fn + Delete
 ```
 
-멀리 떨어진 키 네 개와 150 ms timeout으로 우발 진입 가능성을 낮췄습니다. 이
-combo는 flash를 erase하거나 program하지 않습니다.
+기존 four-corner combo는 timeout 동안 일반 Esc, Delete, Ctrl과 화살표 입력을
+지연시켜 제거했습니다. 전용 Fn 레이어 binding은 같은 SRAM-only handoff를 호출하며
+flash를 erase하거나 program하지 않습니다. `Fn + Backspace`도 Backspace, Ctrl,
+Alt를 combo 키로 만들지 않고 `&sys_reset`을 호출합니다.
 
 ## 6. USB clock과 pin 증명
 
@@ -398,7 +401,7 @@ host의 Caps Lock 상태에 따라 GPIO를 구동합니다. QMK macro나 회로 
 | [`neo65cu_defconfig`](../boards/arm/neo65cu/neo65cu_defconfig) | SoC, USB, polling, timing, stack 및 early-init 설정 |
 | [`Kconfig.board`](../boards/arm/neo65cu/Kconfig.board) | Board 선택과 STM32F072 의존성 |
 | [`Kconfig.defconfig`](../boards/arm/neo65cu/Kconfig.defconfig) | ZMK board 이름과 기본값 |
-| [`neo65cu.keymap`](../boards/arm/neo65cu/neo65cu.keymap) | Base/Fn 레이어 및 reset/ROM-DFU combo |
+| [`neo65cu.keymap`](../boards/arm/neo65cu/neo65cu.keymap) | Base/Fn 레이어 및 reset/ROM-DFU binding |
 | [`neo65cu.zmk.yml`](../boards/arm/neo65cu/neo65cu.zmk.yml) | ZMK board metadata |
 | [`behavior binding`](../dts/bindings/behaviors/zmk,behavior-neo65cu-rom-dfu.yaml) | ROM DFU behavior의 devicetree schema |
 | [`behavior_neo65cu_rom_dfu.c`](../src/behavior_neo65cu_rom_dfu.c) | Early Esc scan, SRAM marker 및 ROM handoff |
@@ -408,7 +411,7 @@ host의 Caps Lock 상태에 따라 GPIO를 구동합니다. QMK macro나 회로 
 | [`zephyr/module.yml`](../zephyr/module.yml) | Board와 DTS module root |
 | [`build.yaml`](../build.yaml) | ZMK build matrix |
 | [`config/west.yml`](../config/west.yml) | 정확히 고정한 ZMK revision |
-| [`audit-firmware.py`](../tools/audit-firmware.py) | BIN/ELF/map/config/DTS fail-closed audit |
+| [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) | 경량 raw-BIN vector 및 주소 검사 |
 
 프로젝트는 ZMK `v0.3.0`에 해당하는 정확한 commit에 고정되어 있습니다.
 
@@ -421,54 +424,31 @@ stream-flash, watchdog, Bluetooth, MCUboot, software vector relay와 ZMK Studio�
 비활성화했습니다. RAM/flash 사용량을 줄이는 동시에 초기 bring-up 중 일반 ZMK
 기능이 persistent data를 기록하지 못하게 하기 위함입니다.
 
-## 9. 독립적으로 감사 가능한 이미지 빌드
+## 9. Release 이미지 빌드와 검사
 
-기본 [Build and Release workflow](https://github.com/thsrhwk01/zmk-neo_neo65cu/actions/workflows/build.yml)는
-같은 고정 ZMK commit으로 두 번 빌드합니다.
+기본 [Build and Release workflow](../.github/workflows/build.yml)는 고정한 ZMK
+commit으로 표준 ZMK user-config build를 실행합니다.
 
-1. 표준 ZMK user-config reusable workflow가 배포용 `firmware` artifact를 만듭니다.
-2. 별도 west workspace가 `zmk.bin`, `zmk.elf`, `zmk.map`, `zephyr.config`, 생성된
-   `zephyr.dts`, symbol과 disassembly를 만듭니다.
-3. [`audit-firmware.py`](../tools/audit-firmware.py)가 독립 build를 검사합니다.
-4. 다음 job이 표준 workflow BIN과 독립적으로 감사한 BIN의 byte-for-byte
-   동일성을 증명합니다.
+1. 표준 workflow가 배포용 `firmware` artifact를 만듭니다.
+2. [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1)이 BIN 크기, MSP, Reset
+   Handler, 필수 vector와 0이 아닌 모든 handler 주소를 검사합니다.
+3. Package job이 실기기 승인 raw-BIN hash와 정확히 일치하는지 확인합니다.
+4. 업로드 전에 Windows flasher package를 `-ValidateOnly`로 검사합니다.
 
-Audit는 다음 변경을 모두 거부합니다.
+Branch push와 수동 실행은 firmware 및 승인된 BIN의 Windows flasher artifact를
+만듭니다. Version tag는 GitHub Release도 게시합니다. Pull request는 firmware만
+빌드합니다.
 
-- 48-word vector table, 필수 core vector 및 USB IRQ 31
-- Main flash/SRAM 경계와 모든 file-backed ELF LOAD segment
-- Zero flash offset, 정확한 BIN payload, main stack/MSP, SRAM vector 위치 및
-  최소 4 KiB RAM 여유
-- Pre-C platform, architecture, C startup 호출 순서
-- SoC, early recovery, clock initialization 순서
-- ROM vector 범위, 8-byte SRAM marker와 stack access 없는 jump tail
-- HSI × 6 PLL, 48 MHz USB clock, PA11/PA12, oscillator 상태와 endpoint
-- 정확한 70-position transform, GPIO 순서/flag, polling, LED 및 recovery combo
-- Storage/settings/Studio/watchdog 비활성화와 linked persistent-write symbol 부재
+초기 포팅 때는 별도 ELF/map/config/DTS 검사 build와 표준 artifact의 완전 동일성
+검사를 사용했습니다. 이 일회성 심층 bring-up 검사는 실기기 검증이 끝난 뒤 active
+workflow에서 제거했으며, 그 결론은 위 구현 설명에 남겨 두었습니다.
 
-### 9.1 Bring-up 중 audit harness 실패
-
-Firmware build는 audit harness보다 먼저 성공했습니다. 다음 failed run은 실제
-보드에 기록한 이미지 실패가 아니라 강화하던 검사 코드의 false positive였습니다.
-
-| Run | 실패 내용 | 수정 |
-| --- | --- | --- |
-| `31319558952` | Map parser가 section이 한 줄에 있다고 가정 | 실제 줄바꿈 linker-map 형식을 parsing |
-| `31319948476` | Container ARM binutils 경로를 추정 | `CMakeCache.txt`에서 정확한 tool path 확인 |
-| `31321068519` | `__rom_region_end`를 flash 전체 끝으로 해석 | Linked ROM payload 끝으로 해석 |
-| `31321291929` | Reset symbol alias 때문에 제한 disassembly가 비어 있음 | 실제 linked reset 주소 범위를 disassemble |
-| `31321651375` | 최종 독립 audit 및 exact BIN 비교 | 통과 |
-
-이 CI 반복 중에는 device erase, download 또는 Option Bytes 동작을 실행하지
-않았습니다. `359CA48E...`, `98FE8504...` 같은 hash의 candidate BIN은 승인하지
-않고 폐기했습니다.
-
-### 9.2 실기기 승인 release gate
+### 9.1 실기기 승인 release gate
 
 [`release/neo65cu-zmk.sha256`](../release/neo65cu-zmk.sha256)은 편의를 위한 checksum이
 아닙니다. 새 build가 하나의 실기기 승인 raw BIN hash와 정확히 같지 않으면 package
-job이 실패합니다. 소스나 keymap 변경이 정적 audit를 통과해도 자동으로 Release가
-되어서는 안 됩니다.
+job이 실패합니다. 소스나 keymap 변경이 build 및 구조 검사를 통과했다는 이유만으로
+자동 Release가 되어서는 안 됩니다.
 
 Manifest를 갱신하려면 새 pre-flash backup, 즉시 readback, cold boot, 장착된 모든
 키/Fn/LED 검사, 애플리케이션 재시작과 세 ROM DFU 복구 검사를 반복해야 합니다.
@@ -492,7 +472,7 @@ schematic이나 continuity 측정이 없으므로 정확한 net 이름은 단정
 ### 10.2 검증된 main-flash 이미지만 기록
 
 다음은 첫 검증 이미지에 실제로 사용한 순서입니다. 2절과 3절의 확인을 생략해도
-된다는 뜻이 아니라 재현 가능한 감사 기록으로 제시합니다. Fresh 목록에서 path와
+된다는 뜻이 아니라 재현 가능한 기록으로 제시합니다. Fresh 목록에서 path와
 serial을 가져오고 두 descriptor를 확인한 뒤 128 KiB 백업을 먼저 완료해야 합니다.
 
 ```powershell
@@ -532,6 +512,10 @@ Download 명령은 alt 0과 `0x08000000`만 선택했습니다. Alt 1, mass eras
 9. ZMK에서 four-corner combo로 ROM DFU를 다시 확인했습니다.
 10. 전원 인가 시 뒷면 `SW?` 접점으로 ROM DFU를 다시 확인했습니다.
 
+이 최초 acceptance 결과는 입력 지연을 줄이기 위한 keymap 변경 전 기록입니다. 같은
+검증된 behavior는 현재 `Fn + Backspace`와 `Fn + Delete`에 배치했으며, release
+manifest를 갱신하기 전에 새 binding을 다음 실기기 검증에 포함해야 합니다.
+
 정상 보드에 불필요한 erase/write cycle을 추가하지 않기 위해 official/Vial 복구
 drill은 실행하지 않았습니다. 대신 두 full readback, stock BIN, dfu-util 환경,
 정확한 hash와 복구 명령을 외부에 보관했습니다.
@@ -559,7 +543,7 @@ Script에는 alt 1 download, Option Bytes 기록, mass erase와 자동 `:leave` 
 | Caps Lock 입력은 되지만 LED가 바뀌지 않음 | PC13 극성, HID indicator 지원, event listener 초기화와 host LED 상태 |
 | 실행 중 `SW?` 쇼트가 아무 동작도 하지 않음 | 확인된 정상 동작이며, 이 접점은 power-on에서만 반응했음 |
 | Hold-Esc로 DFU에 들어가지 않음 | PA6/PC14 교차점, cold-plug timing, data cable 및 다른 키가 row/column을 전기적으로 누르고 있는지 |
-| Four-corner combo 뒤 재시작하지만 DFU가 나타나지 않음 | SRAM marker/link 위치, ROM vector 검사, SYSCFG remap과 jump-trampoline disassembly |
+| `Fn + Delete` 뒤 재시작하지만 DFU가 나타나지 않음 | Fn binding, SRAM marker/link 위치, ROM vector 검사, SYSCFG remap과 jump-trampoline disassembly |
 | DFU descriptor가 문서의 map과 다름 | 즉시 중단하고 같은 PCB revision이라고 가정하지 않음 |
 | 관련 없는 장치나 접근 불가 DFU만 표시 | Cable/driver/port를 다시 확인하고 `0483:df11`을 식별하며 불확실한 대상에는 동작하지 않음 |
 
@@ -591,7 +575,7 @@ Windows 연결음, LED 상태 또는 오류 메시지 하나만으로 원인을 
 - [ ] 48-word SRAM vector table과 early-init 호출 순서를 확인했다.
 - [ ] `MSR MSP` 뒤 ROM jump tail에 stack/memory access가 없는지 확인했다.
 - [ ] Persistent flash-write symbol이 링크되지 않았는지 확인했다.
-- [ ] 표준 ZMK BIN과 독립 감사 BIN을 비교했다.
+- [ ] Raw-BIN vector 및 주소 검사기를 실행했다.
 - [ ] Raw BIN을 실기기 승인 SHA-256과 비교했다.
 - [ ] DFU를 다시 조회하고 현재 path/serial을 기록했다.
 - [ ] 131,072-byte pre-flash backup을 완료하고 검증했다.
@@ -604,7 +588,7 @@ Windows 연결음, LED 상태 또는 오류 메시지 하나만으로 원인을 
 - [ ] 장착된 모든 키와 전체 Fn 레이어를 단독 입력으로 검사했다.
 - [ ] Caps Lock LED 동작을 확인했다.
 - [ ] 애플리케이션 재시작과 ROM DFU 진입을 별도로 확인했다.
-- [ ] Hold-Esc, runtime combo와 hardware power-on ROM DFU 경로를 다시 검사했다.
+- [ ] Hold-Esc, `Fn + Delete`와 hardware power-on ROM DFU 경로를 다시 검사했다.
 - [ ] Source commit, Actions run, raw BIN hash, readback hash, 날짜와 미실장 위치를
       기록했다.
 - [ ] 복구 이미지를 공개 source 저장소 밖에 보관했다.

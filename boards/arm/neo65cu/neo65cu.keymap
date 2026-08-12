@@ -8,29 +8,6 @@
 #define FUNC 1
 
 / {
-    combos {
-        compatible = "zmk,combos";
-
-        /* Backspace + Left Control + Left Alt: restart the application. */
-        combo_sys_reset {
-            timeout-ms = <100>;
-            key-positions = <14 61 63>;
-            bindings = <&sys_reset>;
-        };
-
-        /*
-         * Four distant corner keys make accidental ROM DFU entry unlikely.
-         * This writes only an SRAM marker, resets, and jumps to STM32 system
-         * ROM. It never erases or writes flash/option bytes.
-         * Esc + Delete + Left Control + Right Arrow
-         */
-        combo_rom_dfu {
-            timeout-ms = <150>;
-            key-positions = <0 15 61 69>;
-            bindings = <&neo_dfu>;
-        };
-    };
-
     keymap {
         compatible = "zmk,keymap";
 
@@ -56,7 +33,7 @@
         func {
             bindings = <
                 &kp GRAVE &kp F1   &kp F2   &kp F3   &kp F4   &kp F5   &kp F6   &kp F7
-                &kp F8    &kp F9   &kp F10  &kp F11  &kp F12  &trans   &trans   &trans
+                &kp F8    &kp F9   &kp F10  &kp F11  &kp F12  &trans   &sys_reset &neo_dfu
 
                 &trans    &trans   &trans   &trans   &trans   &trans   &trans   &trans
                 &trans    &trans   &trans   &trans   &trans   &trans   &trans

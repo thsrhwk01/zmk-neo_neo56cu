@@ -374,9 +374,9 @@ Continue?
     }
 
     Write-Host ""
-    Write-Host "Enter STM32 ROM DFU using either verified method:" -ForegroundColor Cyan
+    Write-Host "Enter STM32 ROM DFU using either method:" -ForegroundColor Cyan
     Write-Host "  - Disconnect USB, hold Esc, reconnect USB, then release Esc."
-    Write-Host "  - From ZMK, press Esc + Delete + Left Ctrl + Right Arrow."
+    Write-Host "  - From ZMK, hold Fn and press Delete."
     Write-Host "Waiting for Neo65 CU ROM DFU 0483:df11 (press Ctrl+C to cancel)..."
 
     $DfuDevice = $null

@@ -15,7 +15,7 @@ STM32F072 기반 **Qwertykeys/NEO Studio Neo65 CU 유선 PCB**를 위한 커뮤�
 - PC13 active-high Caps Lock LED
 - 실기기에서 확인한 세 가지 STM32 ROM DFU 진입 방법
 - 펌웨어·대상·백업·readback을 검증하는 Windows 안전 플래셔
-- ZMK revision 고정 및 GitHub Actions의 fail-closed 펌웨어 감사
+- ZMK revision 고정, 경량 BIN 검사 및 실기기 승인 release hash
 - [keymap-drawer](https://github.com/caksoylar/keymap-drawer)를 이용한 키맵 그림 자동 생성
 
 ## 지원 하드웨어
@@ -124,9 +124,9 @@ dfu-util -d ",0483:df11" -p $dfuPath -S $dfuSerial `
 
 | 키 조합 | 동작 |
 | --- | --- |
-| `Backspace + Left Ctrl + Left Alt` | ZMK 애플리케이션 재시작 |
+| Fn + `Backspace` | ZMK 애플리케이션 재시작 |
 | `Esc`를 누른 채 USB 연결 | ZMK 시작 전 STM32 system-ROM DFU 진입 |
-| `Esc + Delete + Left Ctrl + Right Arrow` | ZMK 실행 중 STM32 system-ROM DFU 진입 |
+| Fn + `Delete` | ZMK 실행 중 STM32 system-ROM DFU 진입 |
 
 ![Neo65 CU 키맵 다이어그램](keymap-drawer/neo65cu.svg "keymap-drawer로 생성")
 
@@ -149,27 +149,28 @@ dfu-util -d ",0483:df11" -p $dfuPath -S $dfuSerial `
 
 Windows 플래셔는 MCU 식별을 위해 두 descriptor를 확인하지만 **alt 0만 선택**합니다. alt 1 선택, Option Bytes 변경, mass erase 및 main flash 밖의 기록은 하지 않습니다.
 
-실기기에서 확인한 ROM DFU 진입 방법은 다음과 같습니다.
+사용 가능한 ROM DFU 진입 방법은 다음과 같습니다.
 
 1. `Esc`를 누른 채 USB를 연결합니다.
-2. ZMK 실행 중 `Esc + Delete + Left Ctrl + Right Arrow`를 누릅니다.
+2. ZMK 실행 중 Fn을 누른 채 `Delete`를 누릅니다.
 3. PCB가 노출된 상태에서 뒷면 미실장 `SW?` footprint의 두 패드를 쇼트한 채 USB 전원을 인가합니다.
 
 키보드가 이미 실행 중일 때 `SW?`를 쇼트해도 아무 동작이 없었으며, 전원을 넣는 순간부터 쇼트가 유지되어야 합니다. 자석식 pogo-pin/도터보드 구조 때문에 정상 조립 상태에서는 접근하기 어려우므로 일상 복구에는 `Esc`를 사용하십시오. 다른 패드를 임의로 쇼트하거나 DFU 인식 후에도 전원이 들어온 상태로 쇼트를 계속 유지하지 마십시오.
 
+기존 재시작·ROM DFU 다중 키 combo는 ZMK가 combo 성립 가능성을 기다리는 동안 구성 키 입력을 지연시키므로 제거했습니다. 전용 Fn 레이어 binding을 사용하면 일반 타이핑 중 해당 키에 지연이 생기지 않습니다. Runtime behavior 자체는 기존 combo로 실기기 검증했으며, 새 binding으로 변경된 BIN hash는 새 실기기 검증을 마치기 전까지 승인 release manifest를 대체하지 않습니다.
+
 ## 빌드와 Release
 
-기본 workflow는 ZMK `v0.3.0`의 정확한 commit `edf5c0814fd3ea202e43aad2d68fd32e882a518c`에 고정되어 있습니다. 표준 ZMK artifact와 별도의 감사용 ELF/BIN을 각각 빌드한 뒤 memory map, vector table, clock/USB 설정, matrix, reset 경로, persistent flash writer 부재를 확인하고 두 BIN이 완전히 같은지도 검사합니다.
+기본 workflow는 ZMK `v0.3.0`의 정확한 commit `edf5c0814fd3ea202e43aad2d68fd32e882a518c`에 고정되어 있습니다. 표준 ZMK build를 한 번 실행하고 raw BIN의 크기, MSP, reset handler와 interrupt vector를 검사한 뒤 장치에 접근하지 않는 방식으로 패키지 플래셔도 검증합니다.
 
 성공한 빌드는 다음 artifact를 만들 수 있습니다.
 
 | Artifact | 내용 |
 | --- | --- |
 | `firmware` | 표준 ZMK workflow의 raw `neo65cu-zmk.bin` |
-| `audit-neo65cu` | 독립 ELF, BIN, map 및 감사 metadata |
 | `NEO65CU-ZMK-Windows` | Windows 안전 플래셔 패키지 |
 
-Windows 패키지는 [`release/neo65cu-zmk.sha256`](release/neo65cu-zmk.sha256)에 대해 fail-closed로 동작합니다. 소스나 키맵을 바꿔 다른 BIN이 생성되면 새 이미지를 감사하고 실제 보드에 기록한 뒤 readback까지 확인하고 manifest를 명시적으로 승인하기 전까지 package와 Release가 의도적으로 차단됩니다.
+Windows 패키지는 [`release/neo65cu-zmk.sha256`](release/neo65cu-zmk.sha256)에 대해 fail-closed로 동작합니다. 소스나 키맵을 바꿔 다른 BIN이 생성되면 새 이미지를 실제 보드에서 검증하고 readback까지 확인한 뒤 manifest를 명시적으로 승인하기 전까지 package와 Release가 의도적으로 차단됩니다.
 
 검증을 마친 Release는 annotated version tag를 push해 게시합니다.
 
@@ -196,7 +197,7 @@ west build -s zmk/app -b neo65cu -- \
 - VIA, Vial 및 ZMK Studio는 지원하지 않습니다.
 - 유선 PCB만 지원합니다.
 
-전체 bring-up, ROM handoff, audit와 실기기 검증 과정은
+전체 bring-up, ROM handoff와 실기기 검증 과정은
 [한국어 포팅 가이드](docs/porting-guide_ko.md)와
 [영문 포팅 가이드](docs/porting-guide.md)에 정리했습니다. 시간순 근거 기록은
 [`dev/porting-notes.md`](dev/porting-notes.md)에 있습니다. 복구용 BIN과

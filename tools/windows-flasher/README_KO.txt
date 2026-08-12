@@ -20,7 +20,7 @@ Qwertykeys Neo65 CU 유선(Wired) PCB 중 MCU 마킹이 STM32F072CBT6인 기판
    Yes를 클릭합니다. No를 클릭하면 장치를 읽거나 쓰지 않고 취소합니다.
 4. 다음 방법 중 하나로 STM32 system-ROM DFU에 진입합니다.
    - USB를 분리하고 Esc를 누른 채 다시 연결한 다음 Esc에서 손을 뗍니다.
-   - ZMK 실행 중 Esc + Delete + Left Ctrl + Right Arrow를 동시에 누릅니다.
+   - ZMK 실행 중 Fn을 누른 채 Delete를 누릅니다.
 5. 플래셔는 정확히 한 개의 0483:df11 장치에서 다음 descriptor를 모두 확인한
    뒤 USB path와 serial을 고정합니다.
    - alt 0: @Internal Flash /0x08000000/064*0002Kg
