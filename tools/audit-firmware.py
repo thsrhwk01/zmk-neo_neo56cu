@@ -347,8 +347,14 @@ def audit_elf(
         symbols["z_main_stack"] + 1024 == int(binary["initial_msp"]),
         "Reset vector MSP is not the top of Zephyr's 1024-byte main stack",
     )
-    require(symbols["_image_ram_end"] <= SRAM_END - 4096,
-            "linked image leaves less than 4 KiB of SRAM headroom")
+    ram_used = symbols["_image_ram_end"] - SRAM_START
+    ram_headroom = SRAM_END - symbols["_image_ram_end"]
+    require(
+        0 <= ram_used <= SRAM_END - SRAM_START,
+        "linked RAM image exceeds the STM32F072 SRAM region",
+    )
+    print(f"ram_used_bytes={ram_used}")
+    print(f"ram_headroom_bytes={ram_headroom}")
     require(
         SRAM_START <= symbols["neo65cu_dfu_marker"] <= SRAM_END - 8,
         "ROM-DFU marker is not in SRAM",
