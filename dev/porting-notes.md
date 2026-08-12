@@ -6,10 +6,9 @@
 2. mass erase와 option-byte 변경을 하지 않는다.
 3. 실기기 DFU descriptor와 readback을 확인하기 전에는 첫 플래시를 진행하지
    않는다.
-4. 자동 플래셔는 실기기 검증 SHA-256, 정확한 DFU descriptor와 alt 0만 허용하고,
+4. 자동 플래셔는 bundle checksum, 정확한 DFU descriptor와 alt 0만 허용하고,
    기록 전 128 KiB readback 및 기록 후 exact readback 검증을 fail-closed로
-   수행한다. 새 BIN은 같은 실기기 절차를 통과하기 전 배포 manifest에 등록하지
-   않는다.
+   수행한다.
 5. PCB 모델/리비전/MCU marking이 다르면 같은 firmware를 사용하지 않는다.
 
 ## 확인한 근거
@@ -117,16 +116,14 @@ flash bootloader offset과 VID/PID는 사용하지 않습니다. 현재 Neo65 CU
 다음 순서로 동작합니다.
 
 1. 고정한 ZMK commit으로 표준 ZMK reusable workflow를 한 번 실행합니다.
-2. `inspect-firmware.ps1`로 raw BIN의 크기, MSP, Reset Handler와 vector 주소를
-   확인합니다.
-3. built BIN이 [release/neo65cu-zmk.sha256](../release/neo65cu-zmk.sha256)의
-   실기기 검증 해시와 정확히 일치하는지 확인합니다.
-4. 검증된 dfu-util 0.11 Windows binary와 대응 source archive, 전용 스크립트를
+2. Package job에서 raw BIN의 크기, initial MSP와 Reset Handler를 확인합니다.
+3. 검증된 dfu-util 0.11 Windows binary와 대응 source archive, 전용 스크립트를
    `NEO65CU-ZMK-Windows` artifact로 묶고 `-ValidateOnly` 검사를 실행합니다.
-5. `v*.*` tag push에는 ZIP, raw BIN 및 외부 체크섬을 GitHub Release에도
-   게시합니다.
+4. Firmware, dfu-util과 DLL의 `SHA256SUMS.txt`를 package마다 생성합니다.
+5. Branch push와 수동 실행에는 두 artifact를 올리고, `v*.*` tag push에는 ZIP,
+   raw BIN 및 외부 체크섬을 GitHub Release에도 게시합니다.
 
-Windows 스크립트는 firmware/vector/hash 검사를 먼저 끝낸 뒤 사용자에게 GUI
+Windows 스크립트는 firmware 기본 구조와 bundle checksum 검사를 먼저 끝낸 뒤 사용자에게 GUI
 확인을 받습니다. 이어서 fresh `dfu-util -l`을 반복 실행해 정확히 한 개의
 `0483:df11` 장치가 verified alt 0/alt 1 memory descriptor를 모두 제공하는지
 확인하고, 그 path/serial만 사용합니다. 쓰기 전에는 alt 0 main flash 전체
@@ -134,13 +131,11 @@ Windows 스크립트는 firmware/vector/hash 검사를 먼저 끝낸 뒤 사용�
 SHA-256을 비교합니다. 실제 download 호출에는 항상 `-a 0 -s 0x08000000`만
 들어가며 alt 1, mass erase와 `:leave`는 없습니다.
 
-manifest 해시는 convenience checksum이 아니라 hardware-release 승인 gate입니다.
-source 변경으로 BIN이 달라지면 build와 구조 검사가 통과하더라도 package job이
-실패해야 정상입니다. 새 값을 manifest에 쓰려면 새 BIN으로 기존의 descriptor, pre-flash
-backup, immediate readback, cold boot, 전체 장착 키/LED 및 세 ROM DFU 복구 경로를
-다시 확인해야 합니다.
+사전 승인 raw-BIN hash gate는 제거했습니다. Keymap이나 source가 바뀔 때마다 BIN이
+달라지는 정상적인 build를 막아 LINK65보다 불필요하게 엄격했기 때문입니다. 각 package의
+`SHA256SUMS.txt`는 파일 무결성을 보호하고, 실기기 검증 여부는 별도로 기록합니다.
 
-### 실기기 승인 공개 이미지
+### 실기기 검증 기록
 
 2026-08-10에 source commit
 `2a36f566802fbc65287ddc931ae285326bfa16f5`를 대상으로 실행한
@@ -161,7 +156,8 @@ backup, immediate readback, cold boot, 전체 장착 키/LED 및 세 ROM DFU 복
 초기 포트의 bring-up 단계에서는 별도의 ELF/map/config/DTS build와 표준 BIN 비교도
 수행했습니다. 해당 일회성 검사 코드는 실기기 검증 완료 후 active workflow와
 저장소에서 제거했습니다. 현재 CI에 남은 경량 검사는 부트 가능한 이미지를 증명하는
-대신 명백히 잘못된 크기·MSP·vector와 승인되지 않은 hash의 배포를 차단합니다.
+대신 명백히 잘못된 크기·MSP·Reset Handler를 차단합니다. Package checksum은
+동봉된 파일의 변경 및 손상을 감지합니다.
 GitHub가 표시하는 artifact digest는 ZIP digest이므로 raw BIN SHA-256과 혼동하지
 않습니다.
 
@@ -304,5 +300,5 @@ Keymap Editor용 `config/neo65cu.json`의 `row`/`col`은 전기적 matrix 좌표
 않았습니다.
 
 이 변경으로 생성되는 새 BIN은 build 및 구조 검사 뒤 `Fn + Backspace`,
-`Fn + Delete`, 일반 구성 키의 지연 해소를 실제 보드에서 확인하기 전까지 release
-manifest에 승인하지 않습니다.
+`Fn + Delete`, 일반 구성 키의 지연 해소를 실제 보드에서 확인한 다음 사용하는 것을
+권장합니다.

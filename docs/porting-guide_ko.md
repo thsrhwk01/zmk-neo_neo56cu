@@ -81,7 +81,7 @@ DFU 동작이 안전한 것은 아닙니다. Option Bytes 변경은 boot 선택�
 7. alt 1, Option Bytes 기록, mass erase와 system memory 기록을 사용하지 않습니다.
 8. 재부팅 전에 기록한 정확한 길이만큼 upload해 BIN과 비교합니다.
 9. 첫 ZMK 부팅 뒤 ROM DFU 재진입을 다시 확인합니다.
-10. 전체 실기기 검증을 반복하기 전에는 새 release hash를 승인하지 않습니다.
+10. 변경된 firmware를 배포하기 전에 관련 실기기 검증을 반복합니다.
 
 LINK65 값을 이 포트에 복사하면 안 됩니다. LINK65는 보호된 flash 부트로더,
 `0x08006000` 애플리케이션 offset과 `1688:2220` USB ID를 사용하며, 어느 값도
@@ -198,15 +198,10 @@ Raw application BIN은 다음 조건을 만족해야 합니다.
 - 0이 아닌 모든 handler가 정확한 BIN payload 안을 가리켜야 합니다.
 - Payload 끝이 `0x08020000`을 넘지 않아야 합니다.
 
-저장소의 기본 PowerShell 검사기를 사용할 수 있습니다.
-
-```powershell
-.\tools\inspect-firmware.ps1 .\neo65cu-zmk.bin
-```
-
 초기 bring-up에서는 BIN을 ELF LOAD segment, symbol, linker map, 생성된 Kconfig와
-devicetree까지 연결해 확인했습니다. 현재 release workflow에는 위의 경량 raw-BIN
-검사만 유지합니다.
+devicetree까지 연결해 확인했습니다. 현재 release workflow에는 LINK65 package와 같은
+최소한의 크기, MSP, Reset Handler 검사만 유지합니다. 위의 심층 vector 검사는
+bring-up 근거로는 유용하지만 keymap마다 통과해야 하는 release gate는 아닙니다.
 
 ## 5. Cortex-M0 ROM handoff의 양쪽 방향 처리
 
@@ -411,7 +406,6 @@ host의 Caps Lock 상태에 따라 GPIO를 구동합니다. QMK macro나 회로 
 | [`zephyr/module.yml`](../zephyr/module.yml) | Board와 DTS module root |
 | [`build.yaml`](../build.yaml) | ZMK build matrix |
 | [`config/west.yml`](../config/west.yml) | 정확히 고정한 ZMK revision |
-| [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) | 경량 raw-BIN vector 및 주소 검사 |
 
 프로젝트는 ZMK `v0.3.0`에 해당하는 정확한 commit에 고정되어 있습니다.
 
@@ -430,28 +424,24 @@ stream-flash, watchdog, Bluetooth, MCUboot, software vector relay와 ZMK Studio�
 commit으로 표준 ZMK user-config build를 실행합니다.
 
 1. 표준 workflow가 배포용 `firmware` artifact를 만듭니다.
-2. [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1)이 BIN 크기, MSP, Reset
-   Handler, 필수 vector와 0이 아닌 모든 handler 주소를 검사합니다.
-3. Package job이 실기기 승인 raw-BIN hash와 정확히 일치하는지 확인합니다.
+2. Package job이 BIN 크기, initial MSP와 Reset Handler를 확인합니다.
+3. 정확한 firmware와 동봉 도구의 `SHA256SUMS.txt`를 생성합니다.
 4. 업로드 전에 Windows flasher package를 `-ValidateOnly`로 검사합니다.
 
-Branch push와 수동 실행은 firmware 및 승인된 BIN의 Windows flasher artifact를
-만듭니다. Version tag는 GitHub Release도 게시합니다. Pull request는 firmware만
-빌드합니다.
+Branch push와 수동 실행은 firmware 및 Windows flasher artifact를 만듭니다.
+Version tag는 GitHub Release도 게시합니다. Pull request는 release를 게시하지 않고
+같은 build 및 package 검사를 실행합니다.
 
 초기 포팅 때는 별도 ELF/map/config/DTS 검사 build와 표준 artifact의 완전 동일성
 검사를 사용했습니다. 이 일회성 심층 bring-up 검사는 실기기 검증이 끝난 뒤 active
 workflow에서 제거했으며, 그 결론은 위 구현 설명에 남겨 두었습니다.
 
-### 9.1 실기기 승인 release gate
+### 9.1 Bundle 무결성과 실기기 검증
 
-[`release/neo65cu-zmk.sha256`](../release/neo65cu-zmk.sha256)은 편의를 위한 checksum이
-아닙니다. 새 build가 하나의 실기기 승인 raw BIN hash와 정확히 같지 않으면 package
-job이 실패합니다. 소스나 keymap 변경이 build 및 구조 검사를 통과했다는 이유만으로
-자동 Release가 되어서는 안 됩니다.
-
-Manifest를 갱신하려면 새 pre-flash backup, 즉시 readback, cold boot, 장착된 모든
-키/Fn/LED 검사, 애플리케이션 재시작과 세 ROM DFU 복구 검사를 반복해야 합니다.
+`SHA256SUMS.txt`는 package마다 새로 생성됩니다. Package 안의 firmware나 도구가
+변경 또는 손상됐는지 확인하는 값이며 사전 승인 firmware gate가 아닙니다. Build
+성공만으로 전기적 호환성이나 전체 keymap 동작이 증명되지는 않습니다. 소스와 keymap
+변경은 결과 firmware를 배포하거나 의존하기 전에 대상 PCB에서 확인합니다.
 
 ## 10. 첫 플래시와 실기기 acceptance test
 
@@ -513,8 +503,8 @@ Download 명령은 alt 0과 `0x08000000`만 선택했습니다. Alt 1, mass eras
 10. 전원 인가 시 뒷면 `SW?` 접점으로 ROM DFU를 다시 확인했습니다.
 
 이 최초 acceptance 결과는 입력 지연을 줄이기 위한 keymap 변경 전 기록입니다. 같은
-검증된 behavior는 현재 `Fn + Backspace`와 `Fn + Delete`에 배치했으며, release
-manifest를 갱신하기 전에 새 binding을 다음 실기기 검증에 포함해야 합니다.
+검증된 behavior는 현재 `Fn + Backspace`와 `Fn + Delete`에 배치했으며, 변경된
+build를 배포하거나 의존하기 전에 새 binding도 실기기 검증에 포함해야 합니다.
 
 정상 보드에 불필요한 erase/write cycle을 추가하지 않기 위해 official/Vial 복구
 drill은 실행하지 않았습니다. 대신 두 full readback, stock BIN, dfu-util 환경,
@@ -522,8 +512,8 @@ drill은 실행하지 않았습니다. 대신 두 full readback, stock BIN, dfu-
 
 ### 10.4 배포 플래셔의 보호 장치
 
-Windows package는 같은 보수적인 순서를 자동화합니다. 기록 전에 release hash와
-vector를 확인하고 명시적인 하드웨어 확인을 요구합니다. 검증된 alt 0/alt 1
+Windows package는 같은 보수적인 순서를 자동화합니다. 기록 전에 bundle checksum과
+firmware 기본 구조를 확인하고 명시적인 하드웨어 확인을 요구합니다. 검증된 alt 0/alt 1
 descriptor를 가진 대상이 정확히 하나인지 확인한 뒤 fresh path/serial을 고정하고
 128 KiB 전체를 upload합니다. 이후 alt 0의 `0x08000000`만 기록하고 같은 길이의
 readback을 검증합니다.
@@ -575,8 +565,7 @@ Windows 연결음, LED 상태 또는 오류 메시지 하나만으로 원인을 
 - [ ] 48-word SRAM vector table과 early-init 호출 순서를 확인했다.
 - [ ] `MSR MSP` 뒤 ROM jump tail에 stack/memory access가 없는지 확인했다.
 - [ ] Persistent flash-write symbol이 링크되지 않았는지 확인했다.
-- [ ] Raw-BIN vector 및 주소 검사기를 실행했다.
-- [ ] Raw BIN을 실기기 승인 SHA-256과 비교했다.
+- [ ] Raw BIN SHA-256을 기록하고 크기, MSP와 Reset Handler를 확인했다.
 - [ ] DFU를 다시 조회하고 현재 path/serial을 기록했다.
 - [ ] 131,072-byte pre-flash backup을 완료하고 검증했다.
 - [ ] Alt 0의 `0x08000000`만 선택하고 alt 1과 mass erase를 사용하지 않는다.

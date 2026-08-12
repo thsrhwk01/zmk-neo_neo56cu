@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-STM32F072 기반 **Qwertykeys/NEO Studio Neo65 CU 유선 PCB**를 위한 커뮤니티 ZMK 펌웨어입니다. USB 전용 ZMK 포트, 실기기 검증 펌웨어, STM32 공장 system-ROM 부트로더를 보존하는 Windows 안전 플래셔를 제공합니다.
+STM32F072 기반 **Qwertykeys/NEO Studio Neo65 CU 유선 PCB**를 위한 커뮤니티 ZMK 펌웨어입니다. USB 전용 ZMK 포트와 STM32 공장 system-ROM 부트로더를 보존하는 Windows 안전 플래셔를 제공합니다.
 
 > [!WARNING]
 > 이 펌웨어는 **STM32F072CBT6가 실장된 Neo65 CU 유선 PCB 전용**입니다. Tri-mode PCB, 기존 Neo65, Neo65 Core Plus, Neo65 Sonic HE+, LINK65 및 다른 키보드에는 사용하지 마십시오. 플래시 전에 PCB 종류와 MCU marking을 직접 확인해야 합니다.
@@ -15,7 +15,7 @@ STM32F072 기반 **Qwertykeys/NEO Studio Neo65 CU 유선 PCB**를 위한 커뮤�
 - PC13 active-high Caps Lock LED
 - 실기기에서 확인한 세 가지 STM32 ROM DFU 진입 방법
 - 펌웨어·대상·백업·readback을 검증하는 Windows 안전 플래셔
-- ZMK revision 고정, 경량 BIN 검사 및 실기기 승인 release hash
+- ZMK revision 고정 및 GitHub Actions 자동 패키징
 - [keymap-drawer](https://github.com/caksoylar/keymap-drawer)를 이용한 키맵 그림 자동 생성
 
 ## 지원 하드웨어
@@ -57,7 +57,7 @@ ZIP이나 GitHub artifact digest가 아니라 압축을 푼 **raw BIN**의 해�
 
 플래셔는 다음 조건을 모두 만족할 때만 기록합니다.
 
-- BIN이 실기기 검증 SHA-256과 일치하고 STM32 vector가 유효함
+- BIN의 크기, initial stack pointer와 Reset Handler가 STM32F072 범위에 맞음
 - 정확히 한 개의 `0483:df11` DFU 장치가 STM32F072의 예상 memory map을 노출함
 - 기록 전에 전체 128 KiB main-flash 백업이 성공함
 - alternate setting 0의 `0x08000000`만 선택함
@@ -157,20 +157,22 @@ Windows 플래셔는 MCU 식별을 위해 두 descriptor를 확인하지만 **al
 
 키보드가 이미 실행 중일 때 `SW?`를 쇼트해도 아무 동작이 없었으며, 전원을 넣는 순간부터 쇼트가 유지되어야 합니다. 자석식 pogo-pin/도터보드 구조 때문에 정상 조립 상태에서는 접근하기 어려우므로 일상 복구에는 `Esc`를 사용하십시오. 다른 패드를 임의로 쇼트하거나 DFU 인식 후에도 전원이 들어온 상태로 쇼트를 계속 유지하지 마십시오.
 
-기존 재시작·ROM DFU 다중 키 combo는 ZMK가 combo 성립 가능성을 기다리는 동안 구성 키 입력을 지연시키므로 제거했습니다. 전용 Fn 레이어 binding을 사용하면 일반 타이핑 중 해당 키에 지연이 생기지 않습니다. Runtime behavior 자체는 기존 combo로 실기기 검증했으며, 새 binding으로 변경된 BIN hash는 새 실기기 검증을 마치기 전까지 승인 release manifest를 대체하지 않습니다.
+기존 재시작·ROM DFU 다중 키 combo는 ZMK가 combo 성립 가능성을 기다리는 동안 구성 키 입력을 지연시키므로 제거했습니다. 전용 Fn 레이어 binding을 사용하면 일반 타이핑 중 해당 키에 지연이 생기지 않습니다.
+
+Runtime ROM handoff 동작 자체는 기존 combo로 실기기 검증했습니다. 새 Fn 레이어 binding은 유일한 runtime 복구 수단으로 의존하기 전에 실기기에서 확인하십시오.
 
 ## 빌드와 Release
 
-기본 workflow는 ZMK `v0.3.0`의 정확한 commit `edf5c0814fd3ea202e43aad2d68fd32e882a518c`에 고정되어 있습니다. 표준 ZMK build를 한 번 실행하고 raw BIN의 크기, MSP, reset handler와 interrupt vector를 검사한 뒤 장치에 접근하지 않는 방식으로 패키지 플래셔도 검증합니다.
+기본 workflow는 ZMK `v0.3.0`의 정확한 commit `edf5c0814fd3ea202e43aad2d68fd32e882a518c`에 고정되어 있습니다. LINK65 저장소와 같이 표준 ZMK build를 한 번 실행하고 raw BIN의 크기, initial MSP와 Reset Handler만 검사한 뒤 bundle checksum과 함께 패키징합니다.
 
-성공한 빌드는 다음 artifact를 만들 수 있습니다.
+Branch push, pull request와 수동 workflow 실행은 아래 두 artifact를 모두 생성합니다. Version tag는 GitHub Release도 게시합니다.
 
 | Artifact | 내용 |
 | --- | --- |
 | `firmware` | 표준 ZMK workflow의 raw `neo65cu-zmk.bin` |
 | `NEO65CU-ZMK-Windows` | Windows 안전 플래셔 패키지 |
 
-Windows 패키지는 [`release/neo65cu-zmk.sha256`](release/neo65cu-zmk.sha256)에 대해 fail-closed로 동작합니다. 소스나 키맵을 바꿔 다른 BIN이 생성되면 새 이미지를 실제 보드에서 검증하고 readback까지 확인한 뒤 manifest를 명시적으로 승인하기 전까지 package와 Release가 의도적으로 차단됩니다.
+`SHA256SUMS.txt`는 각 build bundle 내부 파일의 무결성을 확인합니다. Build 성공이 변경된 펌웨어의 실기기 검증을 대신하지는 않습니다.
 
 검증을 마친 Release는 annotated version tag를 push해 게시합니다.
 

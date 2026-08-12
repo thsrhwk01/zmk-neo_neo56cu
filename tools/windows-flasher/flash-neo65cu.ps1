@@ -16,9 +16,6 @@ $MaximumImageSize = 0x20000
 $FlashStart = [uint32]0x08000000
 $SramStart = [uint32]0x20000000
 $SramEnd = [uint32]0x20004000
-$SystemRomBase = [uint32]0x1FFFC800
-$RomDfuMagic = [uint32]0x4E454F44
-$VectorWordCount = 48
 
 function Stop-Flasher {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -28,42 +25,11 @@ function Stop-Flasher {
     exit 1
 }
 
-function Test-ContainsByteSequence {
-    param(
-        [Parameter(Mandatory = $true)][byte[]]$Bytes,
-        [Parameter(Mandatory = $true)][byte[]]$Sequence
-    )
-
-    if ($Sequence.Length -eq 0 -or $Bytes.Length -lt $Sequence.Length) {
-        return $false
-    }
-
-    for ($Offset = 0; $Offset -le $Bytes.Length - $Sequence.Length; $Offset++) {
-        $MatchesSequence = $true
-        for ($Index = 0; $Index -lt $Sequence.Length; $Index++) {
-            if ($Bytes[$Offset + $Index] -ne $Sequence[$Index]) {
-                $MatchesSequence = $false
-                break
-            }
-        }
-
-        if ($MatchesSequence) {
-            return $true
-        }
-    }
-
-    return $false
-}
-
 function Test-Neo65CuImage {
     param([Parameter(Mandatory = $true)][string]$Path)
 
     [byte[]]$Image = [System.IO.File]::ReadAllBytes($Path)
-    if ($Image.Length -lt ($VectorWordCount * 4)) {
-        Stop-Flasher "The firmware is too small to contain the complete STM32F072 vector table."
-    }
-
-    if ($Image.Length -gt $MaximumImageSize) {
+    if ($Image.Length -lt 8 -or $Image.Length -gt $MaximumImageSize) {
         Stop-Flasher ("The firmware is {0} bytes; STM32F072 main flash is {1} bytes." -f $Image.Length, $MaximumImageSize)
     }
 
@@ -80,40 +46,11 @@ function Test-Neo65CuImage {
         Stop-Flasher ("The firmware has an invalid reset handler: 0x{0:X8}" -f $ResetHandler)
     }
 
-    $RequiredVectors = @(1, 2, 3, 11, 14, 15, 47)
-    $NonZeroHandlerVectors = 0
-    for ($Index = 1; $Index -lt $VectorWordCount; $Index++) {
-        [uint32]$Vector = [System.BitConverter]::ToUInt32($Image, $Index * 4)
-        if ($Vector -eq 0) {
-            if ($RequiredVectors -contains $Index) {
-                Stop-Flasher ("Required interrupt vector {0} is zero." -f $Index)
-            }
-            continue
-        }
-
-        $NonZeroHandlerVectors++
-        [uint32]$HandlerAddress = $Vector -band 0xFFFFFFFE
-        if (($Vector -band 1) -eq 0 -or $HandlerAddress -lt $FlashStart -or $HandlerAddress -ge $ImageEnd) {
-            Stop-Flasher ("Interrupt vector {0} points outside this firmware: 0x{1:X8}" -f $Index, $Vector)
-        }
-    }
-
-    [byte[]]$RomBaseBytes = [System.BitConverter]::GetBytes($SystemRomBase)
-    if (-not (Test-ContainsByteSequence -Bytes $Image -Sequence $RomBaseBytes)) {
-        Stop-Flasher "The firmware does not contain the expected STM32F072 system-ROM recovery address."
-    }
-
-    [byte[]]$DfuMagicBytes = [System.BitConverter]::GetBytes($RomDfuMagic)
-    if (-not (Test-ContainsByteSequence -Bytes $Image -Sequence $DfuMagicBytes)) {
-        Stop-Flasher "The firmware does not contain the Neo65 CU ROM-DFU marker."
-    }
-
     [pscustomobject]@{
         Size = $Image.Length
         Hash = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
         InitialMsp = $InitialMsp
         ResetHandler = $ResetHandler
-        NonZeroHandlerVectors = $NonZeroHandlerVectors
     }
 }
 
@@ -258,7 +195,7 @@ try {
         Stop-Flasher "Firmware file not found: $ResolvedFirmwarePath"
     }
 
-    # Keep the validated BIN read-only and non-replaceable until dfu-util and
+    # Keep the packaged BIN read-only and non-replaceable until dfu-util and
     # readback verification finish. dfu-util only needs a concurrent read.
     $FirmwareLock = [System.IO.File]::Open(
         $ResolvedFirmwarePath,
@@ -273,7 +210,6 @@ try {
         Write-Host ("  File:             {0}" -f $ResolvedFirmwarePath)
         Write-Host ("  Size:             {0} bytes" -f $ImageInfo.Size)
         Write-Host ("  Reset handler:    0x{0:X8}" -f $ImageInfo.ResetHandler)
-        Write-Host ("  Handler vectors:  {0}" -f $ImageInfo.NonZeroHandlerVectors)
         Write-Host ("  SHA-256:          {0}" -f $ImageInfo.Hash)
         exit 0
     }
@@ -281,16 +217,15 @@ try {
     $script:DfuUtilPath = Join-Path $PSScriptRoot "dfu-util.exe"
     $LibusbPath = Join-Path $PSScriptRoot "libusb-1.0.dll"
     $ChecksumsPath = Join-Path $PSScriptRoot "SHA256SUMS.txt"
-    $ValidatedHashPath = Join-Path $PSScriptRoot "HARDWARE-VALIDATED-SHA256.txt"
 
-    foreach ($RequiredPath in @($script:DfuUtilPath, $LibusbPath, $ChecksumsPath, $ValidatedHashPath)) {
+    foreach ($RequiredPath in @($script:DfuUtilPath, $LibusbPath, $ChecksumsPath)) {
         if (-not (Test-Path -LiteralPath $RequiredPath -PathType Leaf)) {
             Stop-Flasher ("{0} is missing. Extract the complete ZIP before running this file." -f (Split-Path $RequiredPath -Leaf))
         }
     }
 
     $ExpectedHashes = Read-Checksums -Path $ChecksumsPath
-    foreach ($BundleFile in @($FirmwareName, "dfu-util.exe", "libusb-1.0.dll", "HARDWARE-VALIDATED-SHA256.txt")) {
+    foreach ($BundleFile in @($FirmwareName, "dfu-util.exe", "libusb-1.0.dll")) {
         if (-not $ExpectedHashes.ContainsKey($BundleFile)) {
             Stop-Flasher "SHA256SUMS.txt has no checksum for $BundleFile."
         }
@@ -302,34 +237,20 @@ try {
         }
     }
 
-    $ValidatedLines = @([System.IO.File]::ReadAllLines($ValidatedHashPath) | Where-Object {
-        -not [string]::IsNullOrWhiteSpace($_)
-    })
-    if ($ValidatedLines.Count -ne 1 -or
-        $ValidatedLines[0] -notmatch '^([0-9A-Fa-f]{64})\s+\*?(.+?)\s*$' -or
-        $Matches[2] -ne $FirmwareName) {
-        Stop-Flasher "HARDWARE-VALIDATED-SHA256.txt is invalid. Nothing was written."
-    }
-
-    if ($ImageInfo.Hash -ne $Matches[1].ToUpperInvariant()) {
-        Stop-Flasher "This BIN is not the hardware-validated Neo65 CU firmware. Nothing was written."
-    }
-
-    Write-Host "Neo65 CU hardware-validated firmware verified." -ForegroundColor Green
+    Write-Host "Neo65 CU firmware and bundle checksums verified." -ForegroundColor Green
     Write-Host ("  File:             {0}" -f $FirmwareName)
     Write-Host ("  Size:             {0} bytes" -f $ImageInfo.Size)
     Write-Host ("  Reset handler:    0x{0:X8}" -f $ImageInfo.ResetHandler)
-    Write-Host ("  Handler vectors:  {0}" -f $ImageInfo.NonZeroHandlerVectors)
     Write-Host ("  SHA-256:          {0}" -f $ImageInfo.Hash)
 
     if ($ValidateOnly) {
-        Write-Host "Bundle checksums and hardware-validation gate passed." -ForegroundColor Green
+        Write-Host "Bundle validation passed." -ForegroundColor Green
         exit 0
     }
 
     $InstanceMutex = [System.Threading.Mutex]::new(
         $false,
-        "Local\Neo65CuZmkHardwareValidatedFlasher"
+        "Local\Neo65CuZmkFlasher"
     )
     try {
         $InstanceMutexOwned = $InstanceMutex.WaitOne(0)

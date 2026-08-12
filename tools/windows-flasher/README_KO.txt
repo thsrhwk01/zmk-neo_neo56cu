@@ -83,9 +83,8 @@ WinUSB 절차를 진행해야 합니다. 이전 패키지가 다른 VID:PID 메�
 
 포함 파일
 ---------
-- neo65cu-zmk.bin: 이 Actions 실행에서 빌드되고 실기기 검증 해시와 대조된 ZMK
+- neo65cu-zmk.bin: 이 Actions 실행에서 빌드된 ZMK 펌웨어
 - flash-neo65cu.cmd / flash-neo65cu.ps1: 검증·백업·플래시·readback 스크립트
-- HARDWARE-VALIDATED-SHA256.txt: Release가 허용하는 실기기 검증 BIN 해시
 - dfu-util.exe / libusb-1.0.dll: dfu-util 0.11 Windows x64
 - SHA256SUMS.txt: 포함된 핵심 파일의 SHA-256
 - BUILD-INFO.txt: source commit과 GitHub Actions run

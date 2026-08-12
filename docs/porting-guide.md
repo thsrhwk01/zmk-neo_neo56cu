@@ -80,8 +80,7 @@ The port used these invariants:
    memory.
 8. Upload the exact written length before reboot and compare it with the BIN.
 9. Reconfirm ROM DFU entry after the first successful ZMK boot.
-10. Do not approve a new release hash until the entire hardware test is
-    repeated.
+10. Repeat the relevant hardware tests before publishing changed firmware.
 
 Do not copy LINK65 values into this port. LINK65 uses a protected flash
 bootloader, application offset `0x08006000`, and USB ID `1688:2220`; none of
@@ -200,15 +199,11 @@ For a raw application BIN:
 - Every nonzero handler must point inside the exact BIN payload.
 - The payload must end at or below `0x08020000`.
 
-The repository provides a basic PowerShell inspector:
-
-```powershell
-.\tools\inspect-firmware.ps1 .\neo65cu-zmk.bin
-```
-
 During initial bring-up, the BIN was also compared with ELF load segments,
 symbols, the linker map, generated Kconfig, and generated devicetree. The active
-release workflow now retains the lightweight raw-BIN checks above.
+release workflow intentionally retains only the same minimal size, MSP, and
+Reset Handler checks used by the LINK65 packaging flow. The deeper vector checks
+above remain useful bring-up evidence, but are not a per-keymap release gate.
 
 ## 5. Handle both sides of the Cortex-M0 ROM handoff
 
@@ -414,7 +409,6 @@ Windows rather than inferred only from a schematic or QMK macro.
 | [`zephyr/module.yml`](../zephyr/module.yml) | Board and DTS module roots |
 | [`build.yaml`](../build.yaml) | ZMK build matrix |
 | [`config/west.yml`](../config/west.yml) | Exact pinned ZMK revision |
-| [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) | Lightweight raw-BIN vector and address validation |
 
 The project is pinned to the exact commit behind ZMK `v0.3.0`:
 
@@ -433,15 +427,13 @@ The main [Build and Release workflow](../.github/workflows/build.yml) uses the
 standard reusable ZMK user-config build against the pinned ZMK commit:
 
 1. The standard workflow produces the distributable `firmware` artifact.
-2. [`inspect-firmware.ps1`](../tools/inspect-firmware.ps1) checks the BIN size,
-   MSP, Reset Handler, required vectors, and every nonzero handler address.
-3. The package job requires an exact match with the hardware-approved raw-BIN
-   hash.
+2. The package job checks the BIN size, initial MSP, and Reset Handler.
+3. It generates `SHA256SUMS.txt` for the exact firmware and bundled tools.
 4. The packaged Windows flasher is run with `-ValidateOnly` before upload.
 
-Branch pushes and manual runs create the firmware and, for an approved BIN, the
-Windows-flasher artifact. Version tags additionally publish a GitHub Release.
-Pull requests only build the firmware.
+Branch pushes and manual runs create the firmware and Windows-flasher artifacts.
+Version tags additionally publish a GitHub Release. Pull requests run the same
+build and packaging checks without publishing a release.
 
 The initial port used a separate ELF/map/config/DTS inspection build and an
 exact comparison with the standard artifact. That deeper one-time bring-up
@@ -449,16 +441,13 @@ inspection was removed from the active workflow after the image was validated
 on hardware; its conclusions remain documented in the implementation sections
 above.
 
-### 9.1 Hardware-approved release gate
+### 9.1 Bundle integrity and hardware validation
 
-[`release/neo65cu-zmk.sha256`](../release/neo65cu-zmk.sha256) is not a
-convenience checksum. The package job fails unless the new build equals the
-single hardware-approved raw BIN hash. A source or keymap change must not
-silently become a release merely because it builds and passes structural checks.
-
-Updating the manifest requires a new pre-flash backup, immediate readback,
-cold-boot test, complete installed-key/Fn/LED test, application reset, and all
-three ROM DFU recovery tests.
+`SHA256SUMS.txt` is generated independently for every package. It detects a
+changed or corrupted firmware/tool inside that package; it is not a
+pre-approved-firmware gate. A successful build proves neither electrical
+compatibility nor complete keymap behavior. Test source and keymap changes on
+the intended PCB before publishing or relying on the resulting firmware.
 
 ## 10. First flash and physical acceptance test
 
@@ -522,8 +511,8 @@ The test proceeded in recovery-first order:
 
 These initial acceptance results predate the latency-motivated keymap change.
 The same tested behaviors are now bound to `Fn + Backspace` and `Fn + Delete`;
-those new bindings must be included in the next hardware-validation pass before
-the release manifest is updated.
+include those new bindings in the hardware-validation pass before publishing or
+depending on a changed build.
 
 An official/Vial restoration drill was intentionally not performed on the
 working board because it would add unnecessary erase/write cycles. Both full
@@ -533,10 +522,10 @@ commands were stored externally instead.
 ### 10.4 Distribution flasher safeguards
 
 The Windows package automates the same conservative sequence. Before writing,
-it validates the release hash and vectors, requires explicit hardware
-confirmation, finds exactly one target with the verified alt-0/alt-1
-descriptors, locks its fresh path/serial, and uploads all 128 KiB. It then
-writes only alt 0 at `0x08000000` and verifies a same-length readback.
+it validates the bundle checksums and basic firmware structure, requires
+explicit hardware confirmation, finds exactly one target with the verified
+alt-0/alt-1 descriptors, locks its fresh path/serial, and uploads all 128 KiB.
+It then writes only alt 0 at `0x08000000` and verifies a same-length readback.
 
 The script has no alt-1 download, option-byte write, mass erase, or automatic
 `:leave` path. The backup is retained even when a later step fails.
@@ -587,8 +576,7 @@ and readback.
 - [ ] Confirm the 48-word SRAM vector table and early-init call order.
 - [ ] Inspect the ROM jump tail after `MSR MSP` for stack/memory access.
 - [ ] Confirm that no persistent flash-write symbol is linked.
-- [ ] Run the raw-BIN vector and address validator.
-- [ ] Match the raw BIN to the hardware-approved SHA-256.
+- [ ] Record the raw BIN SHA-256 and verify its size, MSP, and Reset Handler.
 - [ ] Re-list DFU and capture the current path/serial.
 - [ ] Complete and verify a 131,072-byte pre-flash backup.
 - [ ] Select only alt 0 at `0x08000000`; never use alt 1 or mass erase.
