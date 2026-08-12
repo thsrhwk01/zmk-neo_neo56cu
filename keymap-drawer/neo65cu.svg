@@ -1,4 +1,4 @@
-<svg width="956" height="780" viewBox="0 0 956 780" class="keymap" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<svg width="956" height="686" viewBox="0 0 956 686" class="keymap" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
 <style>/* inherit to force styles through use tags */
 svg path {
     fill: inherit;
@@ -137,7 +137,7 @@ rect.held, rect.combo.held {
 </style>
 <g transform="translate(30, 0)" class="layer-Base">
 <text x="0" y="21" class="label" id="Base">Base:</text>
-<g transform="translate(0, 65)">
+<g transform="translate(0, 42)">
 <g transform="translate(28, 28)" class="key keypos-0">
 <rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
@@ -518,28 +518,11 @@ rect.held, rect.combo.held {
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
 <text x="0" y="-4" class="key tap">→</text>
 </g>
-<g class="combo combopos-0">
-<path d="M341,289 h465 a6.0,6.0 0 0 0 6.0,-6.0 v-237" class="combo"/>
-<path d="M341,289 h-300 a6.0,6.0 0 0 1 -6.0,-6.0 v-13" class="combo"/>
-<path d="M341,289 h-160 a6.0,6.0 0 0 1 -6.0,-6.0 v-13" class="combo"/>
-<rect rx="6" ry="6" x="323" y="275" width="36" height="28" class="combo"/>
-<text x="341" y="289" class="combo tap">RESTART</text>
-</g>
-<g class="combo combopos-1">
-<path d="M450,-9 h-416 a6.0,6.0 0 0 0 -6.0,6.0 v13" class="combo"/>
-<path d="M450,-9 h412 a6.0,6.0 0 0 1 6.0,6.0 v13" class="combo"/>
-<path d="M450,-9 h-409 a6.0,6.0 0 0 0 -6.0,6.0 v237" class="combo"/>
-<path d="M450,-9 h412 a6.0,6.0 0 0 1 6.0,6.0 v237" class="combo"/>
-<rect rx="6" ry="6" x="432" y="-23" width="36" height="28" class="combo"/>
-<text x="450" y="-9" class="combo tap">
-<tspan x="450" dy="-0.6em">ROM</tspan><tspan x="450" dy="1.2em">DFU</tspan>
-</text>
 </g>
 </g>
-</g>
-<g transform="translate(30, 369)" class="layer-Fn">
+<g transform="translate(30, 322)" class="layer-Fn">
 <text x="0" y="21" class="label" id="Fn">Fn:</text>
-<g transform="translate(0, 65)">
+<g transform="translate(0, 42)">
 <g transform="translate(28, 28)" class="key keypos-0">
 <rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
@@ -611,15 +594,17 @@ rect.held, rect.combo.held {
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key trans"/>
 <text x="0" y="-4" class="key trans tap">▽</text>
 </g>
-<g transform="translate(812, 28)" class="key trans keypos-14">
-<rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key trans side"/>
-<rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key trans"/>
-<text x="0" y="-4" class="key trans tap">▽</text>
+<g transform="translate(812, 28)" class="key keypos-14">
+<rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
+<rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
+<text x="0" y="-4" class="key tap">RESTART</text>
 </g>
-<g transform="translate(868, 28)" class="key trans keypos-15">
-<rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key trans side"/>
-<rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key trans"/>
-<text x="0" y="-4" class="key trans tap">▽</text>
+<g transform="translate(868, 28)" class="key keypos-15">
+<rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key side"/>
+<rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key"/>
+<text x="0" y="-4" class="key tap">
+<tspan x="0" dy="-0.6em">ROM</tspan><tspan x="0" dy="1.2em">DFU</tspan>
+</text>
 </g>
 <g transform="translate(42, 84)" class="key trans keypos-16">
 <rect rx="6" ry="6" x="-40" y="-26" width="80" height="52" class="key trans side"/>
@@ -889,23 +874,6 @@ rect.held, rect.combo.held {
 <rect rx="6" ry="6" x="-26" y="-26" width="52" height="52" class="key trans side"/>
 <rect rx="4" ry="4" x="-20" y="-24" width="40" height="40" class="key trans"/>
 <text x="0" y="-4" class="key trans tap">▽</text>
-</g>
-<g class="combo combopos-0">
-<path d="M341,289 h465 a6.0,6.0 0 0 0 6.0,-6.0 v-237" class="combo"/>
-<path d="M341,289 h-300 a6.0,6.0 0 0 1 -6.0,-6.0 v-13" class="combo"/>
-<path d="M341,289 h-160 a6.0,6.0 0 0 1 -6.0,-6.0 v-13" class="combo"/>
-<rect rx="6" ry="6" x="323" y="275" width="36" height="28" class="combo"/>
-<text x="341" y="289" class="combo tap">RESTART</text>
-</g>
-<g class="combo combopos-1">
-<path d="M450,-9 h-416 a6.0,6.0 0 0 0 -6.0,6.0 v13" class="combo"/>
-<path d="M450,-9 h412 a6.0,6.0 0 0 1 6.0,6.0 v13" class="combo"/>
-<path d="M450,-9 h-409 a6.0,6.0 0 0 0 -6.0,6.0 v237" class="combo"/>
-<path d="M450,-9 h412 a6.0,6.0 0 0 1 6.0,6.0 v237" class="combo"/>
-<rect rx="6" ry="6" x="432" y="-23" width="36" height="28" class="combo"/>
-<text x="450" y="-9" class="combo tap">
-<tspan x="450" dy="-0.6em">ROM</tspan><tspan x="450" dy="1.2em">DFU</tspan>
-</text>
 </g>
 </g>
 </g>
